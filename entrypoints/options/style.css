@@ -1,0 +1,183 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #0f1419;
+  --muted: #536471;
+  --line: #eff3f4;
+  --border: #cfd9de;
+  --control: #ffffff;
+  --accent: #1d9bf0;
+  --track: #cfd9de;
+  --thumb: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --fg: #e7e9ea;
+    --muted: #8b98a5;
+    --line: #2f3336;
+    --border: #536471;
+    --control: #000000;
+    --track: #3e4144;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  max-width: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+main {
+  width: min(520px, 100%);
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}
+
+.brand { text-align: center; margin-bottom: 36px; }
+.brand img { width: 48px; height: 48px; border-radius: 12px; }
+.brand h1 { margin: 12px 0 4px; font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -0.01em; }
+.brand p, .section-description, .context p, .direction, footer { color: var(--muted); }
+.brand p { margin: 0; }
+
+h2 { margin: 0 0 4px; font-size: 13px; line-height: 1.3; font-weight: 650; }
+.section-description { margin: 0 0 16px; }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+.analytics-section { margin-top: 28px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.field span { font-weight: 600; }
+
+select {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control);
+  color: inherit;
+  font: inherit;
+}
+
+select:focus-visible, .switch input:focus-visible + .track, footer a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.direction { margin: 12px 0 0; font-size: 13px; }
+
+.context-group { border-top: 1px solid var(--line); }
+.context-group:last-child { border-bottom: 1px solid var(--line); }
+
+.context-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 4px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.context-summary::-webkit-details-marker { display: none; }
+.context-summary:hover { color: var(--accent); }
+.context-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.context-chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.context-group[open] > .context-summary .context-chevron { transform: rotate(45deg); }
+.context-options { padding: 0 0 16px 26px; }
+
+.context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.context:first-of-type { border-top: 0; padding-top: 0; }
+.context-copy, .context > div { min-width: 0; }
+.context label { font-weight: 600; }
+.context p { margin: 2px 0 0; font-size: 13px; }
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.track {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--track);
+  pointer-events: none;
+}
+
+.track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--thumb);
+}
+
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(16px); }
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 36px;
+  padding-top: 16px;
+  font-size: 13px;
+}
+
+.footer-info { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+footer p { margin: 0; }
+footer a { color: inherit; text-underline-offset: 3px; }
+footer a:hover { color: var(--accent); }
+.save-status[data-state="error"] { color: #f4212e; }
+
+@media (max-width: 560px) {
+  main { padding: 32px 16px 48px; }
+  footer { align-items: flex-start; }
+}

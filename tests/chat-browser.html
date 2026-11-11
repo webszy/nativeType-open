@@ -1,0 +1,150 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NativeType Chat regression fixture</title>
+<style>
+  body { font:16px system-ui; margin:24px; background:#fff; color:#111; }
+  pre { white-space:pre-wrap; max-height:45vh; overflow:auto; }
+</style>
+<h1>NativeType Chat regression fixture</h1>
+<p>Simulated controlled input and sending, using X’s observed Shadow DOM composer structure. Translation is mocked; no messages leave this page.</p>
+<button id="run">Run Chat regression tests</button>
+<pre id="results">Ready</pre>
+<script type="module">
+import { startNativeType } from '../core/controller.ts';
+import { xPlatform } from '../platforms/x.ts';
+import { createMemoryBackend, createSettingsStore } from '../settings/store.ts';
+import { chatComposer } from './platforms/x-fixture.mjs';
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const results = document.querySelector('#results');
+const assert = (condition, description) => {
+  if (!condition) throw new Error(description);
+  results.textContent += `\nPASS ${description}`;
+};
+const originalPath = location.pathname;
+const settings = createSettingsStore(createMemoryBackend());
+const invalidation = new AbortController();
+let delay = 15;
+const requests = [];
+startNativeType({
+  platform: xPlatform,
+  provider: {
+    prepare() {}, retainPair() {}, dispose() {},
+    async translate(text, request) {
+      const id = requests.push({ text, signal: request.signal });
+      await sleep(delay);
+      return `Translation ${id}`;
+    },
+  },
+  languagePair: { source: 'zh', target: 'en' },
+  settings,
+  host: {
+    listen: (target, type, listener) => target.addEventListener(type, listener, { signal: invalidation.signal }),
+    onInvalidated: listener => invalidation.signal.addEventListener('abort', listener),
+  },
+});
+const overlay = () => document.querySelector('[data-nativetype]');
+const shown = () => overlay()?.style.display === 'block';
+const preview = () => overlay().shadowRoot.querySelector('p').textContent;
+const replace = () => [...overlay().shadowRoot.querySelectorAll('button')].find(button => button.textContent === 'Replace').click();
+const nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+
+function mount() {
+  const chat = chatComposer(document, { text: '' });
+  chat.host.style.cssText = 'position:fixed;bottom:32px;left:100px;right:100px;background:#fff;border:1px solid #ddd;';
+  chat.history.style.cssText = 'height:70px;overflow:auto;';
+  chat.history.contentEditable = 'false';
+  chat.form.style.cssText = 'display:flex;align-items:end;padding:8px;overflow:hidden;';
+  chat.inputContainer.style.cssText = 'flex:1;min-width:0;background:color(srgb 1 1 1);';
+  chat.editor.style.cssText = 'box-sizing:border-box;width:100%;height:60px;font:16px/20px system-ui;resize:none;';
+  chat.send.textContent = 'Send (simulated)';
+  const sent = [];
+  let state = '';
+  let tracked = '';
+  // Simulate React's own tracker so using editor.value = text cannot pass.
+  Object.defineProperty(chat.editor, 'value', {
+    get() { return nativeValue.get.call(this); },
+    set(value) { tracked = value; nativeValue.set.call(this, value); },
+  });
+  chat.editor.addEventListener('input', () => {
+    if (tracked !== chat.editor.value) tracked = state = chat.editor.value;
+  });
+  const input = text => {
+    chat.editor.focus({ preventScroll: true });
+    nativeValue.set.call(chat.editor, text);
+    chat.editor.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+  };
+  chat.form.addEventListener('submit', event => {
+    event.preventDefault();
+    sent.push(state);
+    input('');
+  });
+  chat.editor.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); chat.form.requestSubmit(); }
+  });
+  return { ...chat, sent, input, state: () => state };
+}
+
+document.querySelector('#run').addEventListener('click', async () => {
+  results.textContent = 'Running';
+  const chat = mount();
+  try {
+    history.pushState(null, '', '/i/chat/100-200');
+    await sleep(40);
+    chat.input('中文聊天草稿');
+    await sleep(1100);
+    assert(shown() && preview() === 'Translation 1', 'Chinese input in the open shadow root produces the existing Preview');
+    assert(getComputedStyle(overlay().shadowRoot.querySelector('section')).color === 'rgb(15, 20, 25)', 'The modern Chat sRGB background keeps readable preview colors in the light theme');
+    const before = { input: chat.editor.getBoundingClientRect().height, form: chat.form.getBoundingClientRect().height, scroll: chat.history.scrollTop };
+    assert(overlay().getBoundingClientRect().bottom <= chat.editor.getBoundingClientRect().top - 3, 'Preview stays above the input and Send button');
+    assert(overlay().matches(':popover-open') && overlay().parentElement === document.body, 'Top-layer preview escapes composer overflow and Shadow DOM clipping');
+    assert(!chat.editor.style.minHeight && !chat.inputContainer.style.minHeight && chat.history.scrollTop === before.scroll, 'Preview leaves input sizing and message-list scrolling intact');
+    replace(); await sleep(100);
+    assert(chat.editor.value === 'Translation 1' && chat.state() === 'Translation 1' && !shown(), 'Replace synchronizes the controlled draft and closes Preview');
+    assert(chat.sent.length === 0, 'Replace never submits the form');
+    assert(chat.root.activeElement === chat.editor && chat.editor.selectionStart === chat.editor.value.length, 'Replace preserves editor focus and places the caret at the end');
+    assert(chat.editor.getBoundingClientRect().height === before.input && chat.form.getBoundingClientRect().height === before.form, 'Showing and hiding Preview keeps the composer height');
+    chat.input(`${chat.editor.value}!`);
+    chat.editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+    await sleep(40);
+    assert(JSON.stringify(chat.sent) === JSON.stringify(['Translation 1!']), 'Continued editing and simulated Enter send the new state exactly once');
+    chat.input('点击按钮发送的中文'); await sleep(1100);
+    replace(); await sleep(100); chat.send.click(); await sleep(40);
+    assert(JSON.stringify(chat.sent) === JSON.stringify(['Translation 1!', 'Translation 2']), 'Simulated Send uses the replacement once, without old text or blanks');
+    delay = 1200;
+    chat.input('同一个草稿'); await sleep(1050);
+    history.pushState(null, '', '/i/chat/100-300');
+    await sleep(40);
+    assert(!shown() && requests.at(-1).signal.aborted, 'SPA route change cancels the old conversation immediately');
+    chat.input('同一个草稿'); await sleep(1400);
+    assert(!shown() || preview() !== 'Translation 3', 'Identical drafts in reused inputs cannot reuse the previous conversation result');
+    await sleep(1000);
+    assert(shown() && preview() === 'Translation 4', 'The new conversation produces its own preview');
+    delay = 15;
+    chat.input('用户继续编辑的中文');
+    replace(); await sleep(100);
+    assert(chat.editor.value === '用户继续编辑的中文', 'An out-of-date preview cannot overwrite continued typing');
+    await sleep(1050);
+    const next = await settings.load(); next.contexts.x.chat = false;
+    await settings.save(next); await sleep(40);
+    assert(!shown(), 'Disabling Chat removes its existing preview');
+    const calls = requests.length;
+    chat.input('已关闭聊天翻译'); await sleep(1100);
+    assert(requests.length === calls && !shown(), 'Disabled Chat never starts translation');
+    next.contexts.x.chat = true; await settings.save(next); await sleep(1100);
+    assert(shown(), 'Re-enabling Chat resumes its focused draft');
+    chat.host.remove(); await sleep(40);
+    assert(!shown(), 'Removing the shadow host clears the preview');
+    const remounted = mount(); remounted.input('重新挂载的编辑器'); await sleep(1100);
+    assert(shown() && document.querySelectorAll('[data-nativetype]').length === 1, 'A remounted input works with one preview');
+    remounted.host.remove();
+    results.textContent += '\nDONE: All simulated Chat regression checks passed.';
+  } catch (error) {
+    results.textContent += `\nFAIL ${error.message}`;
+  } finally {
+    invalidation.abort();
+    chat.host.remove();
+    history.replaceState(null, '', originalPath);
+  }
+});
+</script>

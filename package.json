@@ -1,0 +1,35 @@
+{
+  "name": "nativetype-open",
+  "description": "Write in your language. Publish in another.",
+  "private": true,
+  "version": "0.0.5",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "test": "node --test tests/translator.test.mjs",
+    "screenshot:store": "node --import tsx scripts/capture-store-screenshots.ts",
+    "zip": "wxt zip",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare",
+    "typecheck": "tsc --noEmit && pnpm --filter @nativetype/contracts typecheck"
+  },
+  "dependencies": {
+    "@nativetype/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.5",
+    "web-ext": "^10.5.0",
+    "ws": "^8.22.0",
+    "wxt": "^0.21.3"
+  }
+}

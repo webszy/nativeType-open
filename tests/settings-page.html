@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NativeType Settings</title>
+    <link rel="stylesheet" href="../entrypoints/options/style.css" />
+  </head>
+  <body>
+    <main id="settings"></main>
+    <script type="module">
+      import { mountSettingsPage } from '../settings/page.ts';
+      import { createMemoryBackend, createSettingsStore } from '../settings/store.ts';
+
+      async function boot(initial, failLoad = false) {
+        const backend = createMemoryBackend(initial);
+        const store = createSettingsStore({
+          read: async () => {
+            if (failLoad) throw new Error('storage unavailable');
+            return backend.read();
+          },
+          write: async value => {
+            if (window.__failSave) throw new Error('storage unavailable');
+            await backend.write(value);
+          },
+          watch: listener => backend.watch(listener),
+        });
+        window.__settingsBackend = backend;
+        window.__settingsStore = store;
+        const root = document.querySelector('#settings');
+        root.replaceChildren();
+        await mountSettingsPage(root, store, '/icon/128.png');
+        window.__settingsReady = true;
+      }
+
+      window.__bootSettings = boot;
+      await boot(undefined, new URLSearchParams(location.search).get('failLoad') === '1');
+    </script>
+  </body>
+</html>

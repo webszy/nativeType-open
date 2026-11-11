@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>NativeType Privacy Policy</title>
+
+    <meta
+            name="description"
+            content="Privacy Policy for the NativeType Chrome extension."
+    />
+
+    <style>
+        :root {
+            color-scheme: light;
+            --background: #ffffff;
+            --surface: #f7f8fa;
+            --text: #171717;
+            --secondary: #666666;
+            --border: #e5e7eb;
+            --link: #2563eb;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--background);
+            color: var(--text);
+            font-family:
+                    Inter,
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+            line-height: 1.7;
+        }
+
+        main {
+            width: min(760px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 72px 0 96px;
+        }
+
+        header {
+            margin-bottom: 56px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: clamp(32px, 5vw, 48px);
+            line-height: 1.15;
+            letter-spacing: -0.04em;
+        }
+
+        h2 {
+            margin: 48px 0 12px;
+            font-size: 22px;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+        }
+
+        p,
+        li {
+            font-size: 16px;
+        }
+
+        p {
+            margin: 12px 0;
+        }
+
+        ul {
+            padding-left: 24px;
+        }
+
+        .subtitle,
+        .updated {
+            color: var(--secondary);
+        }
+
+        .summary {
+            margin-top: 32px;
+            padding: 20px 22px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+        }
+
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        footer {
+            margin-top: 64px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            color: var(--secondary);
+            font-size: 14px;
+        }
+
+        code {
+            padding: 2px 5px;
+            background: var(--surface);
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+<main>
+    <header>
+        <h1>NativeType Privacy Policy</h1>
+
+        <p class="subtitle">
+            Write in your language. Publish in another.
+        </p>
+
+        <p class="updated">
+            Last updated: October 27, 2026
+        </p>
+
+        <div class="summary">
+            <strong>Short version:</strong>
+            NativeType only accesses text you enter in supported web composers
+            when necessary to provide translation functionality. NativeType does
+            not sell your data, does not use your draft text for advertising, and
+            does not transmit your draft text to NativeType-controlled servers.
+            Optional usage statistics are disabled by default. If you turn them
+            on, NativeType sends a random installation ID and one of three event
+            names to its own Cloudflare Worker; it never sends your text,
+            translations, page URLs, titles, or account information.
+        </div>
+    </header>
+
+    <section>
+        <h2>1. About NativeType</h2>
+
+        <p>
+            NativeType is a browser extension that helps users write in one
+            language and publish in another directly inside supported websites.
+        </p>
+
+        <p>
+            The current version supports translation inside the X post composer,
+            including translation preview and one-click replacement of the text
+            entered by the user.
+        </p>
+    </section>
+
+    <section>
+        <h2>2. Information NativeType Accesses</h2>
+
+        <p>
+            To provide its core translation functionality, NativeType may access
+            website content that you actively enter into a supported text composer.
+        </p>
+
+        <p>
+            For example, when using NativeType on X, the extension may read the
+            text you type into the post composer so it can generate a translation
+            preview and replace the text when you explicitly choose to do so.
+        </p>
+
+        <p>
+            NativeType does not intentionally collect:
+        </p>
+
+        <ul>
+            <li>Your name or identity information</li>
+            <li>Email addresses or account credentials</li>
+            <li>Passwords or authentication information</li>
+            <li>Payment or financial information</li>
+            <li>Health information</li>
+            <li>Precise location information</li>
+            <li>Browsing history</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>3. How Your Text Is Used</h2>
+
+        <p>
+            Text accessed by NativeType is used only to provide the extension's
+            translation workflow.
+        </p>
+
+        <p>
+            This includes:
+        </p>
+
+        <ul>
+            <li>Detecting text entered into a supported composer</li>
+            <li>Generating a translation</li>
+            <li>Displaying a translation preview</li>
+            <li>
+                Replacing the original text when you explicitly request replacement
+            </li>
+        </ul>
+
+        <p>
+            NativeType does not use your text for advertising, profiling, credit
+            decisions, or purposes unrelated to the extension's translation
+            functionality.
+        </p>
+    </section>
+
+    <section>
+        <h2>4. Translation Processing</h2>
+
+        <p>
+            The current version of NativeType uses Chrome's built-in Translator
+            API to perform translation.
+        </p>
+
+        <p>
+            NativeType does not transmit the text you enter to
+            NativeType-controlled servers for translation.
+        </p>
+
+        <p>
+            Chrome and the browser environment may independently manage browser
+            components, language models, updates, diagnostics, or related platform
+            functionality according to Google's own terms and privacy policies.
+            NativeType does not control those browser-level processes.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. Data Storage and Retention</h2>
+
+        <p>
+            NativeType does not maintain a server-side database containing your
+            draft text or translations.
+        </p>
+
+        <p>
+            Text accessed for translation is processed only as needed to provide
+            the requested functionality and is not retained by NativeType after
+            that functionality is completed.
+        </p>
+
+        <p>
+            Language preferences, X context switches, and your statistics choice
+            are saved locally using Chrome extension storage. A random UUID v4
+            installation ID is created and stored locally only after you enable
+            usage statistics. It persists across browser restarts and normal
+            extension updates, and is not based on your account or device hardware.
+        </p>
+
+        <p>
+            For participating installations, the server stores a keyed
+            HMAC-SHA256 hash of that ID with daily translation, replacement, and
+            error counts in Cloudflare D1. It does not store the raw ID or an
+            individual event history. Daily cleanup retains the most recent 90
+            UTC dates; cleanup delays can temporarily extend retention.
+        </p>
+
+        <p>
+            Turning statistics off stops future reporting, removes the local ID,
+            and attempts to cancel pending requests. It does not immediately
+            delete counts already accepted by the server; those expire under
+            the retention policy. Turning statistics back on creates a new ID.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. Data Sharing and Sale</h2>
+
+        <p>
+            NativeType does not sell user data.
+        </p>
+
+        <p>
+            NativeType does not transfer user data to third parties for advertising,
+            marketing, credit assessment, data brokerage, or purposes unrelated to
+            the extension's single purpose.
+        </p>
+    </section>
+
+    <section>
+        <h2>7. Website Permissions</h2>
+
+        <p>
+            NativeType requests access only to supported websites where its
+            translation functionality needs to operate and to its statistics
+            API host, <code>https://typewith.si</code>.
+        </p>
+
+        <p>
+            In the current version, access to <code>x.com</code> is used to:
+        </p>
+
+        <ul>
+            <li>Detect the X post composer</li>
+            <li>Read text entered by the user</li>
+            <li>Display the NativeType translation interface</li>
+            <li>Replace composer text when requested by the user</li>
+        </ul>
+
+        <p>
+            These permissions are not used to monitor unrelated browsing activity.
+            The API host permission allows the extension background service worker
+            to send optional usage statistics after you enable them. It does not
+            send website content to that host.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. Analytics and Tracking</h2>
+
+        <p>
+            NativeType does not currently use advertising trackers or behavioral
+            analytics to monitor your browsing activity.
+        </p>
+
+        <p>
+            In Settings, under Privacy &amp; Analytics, you may choose
+            “Share anonymous usage statistics”. It is optional and disabled by
+            default for new and existing users. Translation works with this
+            setting off and when the statistics service is unavailable.
+        </p>
+
+        <p>
+            When enabled, the extension sends only a random installation ID and
+            the event name <code>translation_success</code>,
+            <code>replace_success</code>, or <code>translation_error</code> over
+            HTTPS to <code>https://typewith.si/api/v1/events</code>, a
+            NativeType-controlled Cloudflare Worker. These counts help us
+            understand use and reliability. They do not measure individual people
+            or translation quality. We do not collect draft text, translations,
+            URLs, page titles, account details, language-detection text, or error
+            stacks in statistics reports. We do not store IP addresses or
+            User-Agent strings in the analytics database.
+        </p>
+
+        <p>
+            Despite the setting's short label, this is pseudonymous measurement,
+            not absolutely anonymous or untraceable data. Reports using the same
+            installation ID can be correlated. Someone with both the server's
+            HMAC secret and an installation ID could match its stored hash.
+            Cloudflare processes network connections as our infrastructure
+            provider. No account ID, device fingerprint, or hardware identifier
+            is used to create the random installation ID.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. Children's Privacy</h2>
+
+        <p>
+            NativeType is a general-purpose productivity tool and is not designed
+            specifically for children. NativeType does not knowingly collect
+            personal information from children.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. Changes to This Privacy Policy</h2>
+
+        <p>
+            This Privacy Policy may be updated when NativeType's functionality,
+            permissions, or data practices change.
+        </p>
+
+        <p>
+            Any material changes will be reflected on this page together with an
+            updated revision date.
+        </p>
+    </section>
+
+    <section>
+        <h2>11. Contact</h2>
+
+        <p>
+            NativeType is an open-source project.
+        </p>
+
+        <p>
+            For privacy questions, bug reports, or other concerns, please open an
+            issue on the NativeType GitHub repository:
+        </p>
+
+        <p>
+            <a
+                    href="https://github.com/webszy/NativeType/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+            >
+                github.com/webszy/NativeType/issues
+            </a>
+        </p>
+    </section>
+
+    <footer>
+        © 2026 NativeType
+    </footer>
+</main>
+</body>
+</html>

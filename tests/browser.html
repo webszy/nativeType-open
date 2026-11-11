@@ -1,0 +1,337 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NativeType local regression fixture</title>
+<style>
+body { font:16px system-ui; max-width:640px; margin:40px auto; background:white; color:#111; }
+[contenteditable] { border:1px solid #aaa; min-height:60px; padding:16px; margin-bottom:170px; white-space:pre-wrap; }
+button { padding:8px 16px; } pre { white-space:pre-wrap; }
+</style>
+<h1>NativeType local regression fixture</h1>
+<p>This fixture uses a fake Translator for deterministic tests. It does not verify Chrome’s real model or X’s React editor.</p>
+<button id="run">Run regression tests</button>
+<pre id="results">Ready</pre>
+<div contenteditable="true" role="textbox" data-testid="tweetTextarea_0" aria-label="New post"></div>
+<div role="dialog" aria-label="Reply dialog" style="transform:translate(0);background:rgb(20,20,20);color:white;overflow:hidden;margin-bottom:170px"><article data-testid="tweet" hidden></article><div data-testid="tweetTextarea_1RichTextInputContainer" style="margin-bottom:0"><div contenteditable="true" role="textbox" data-testid="tweetTextarea_1" aria-label="Reply" style="background:rgba(255,255,255,0);margin-bottom:0"></div></div><div role="toolbar" aria-label="Reply actions"><button>Reply</button></div></div>
+<script type="module">
+let calls = [], creates = 0, delay = 15;
+window.Translator = {
+  availability: async () => 'downloadable',
+  create: async ({ monitor }) => {
+    creates++;
+    monitor({ addEventListener: (_, listener) => listener({ loaded: .5 }) });
+    return { translate: async text => {
+      calls.push(text);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return text.includes('多行') ? 'First line\nSecond line' : `English: ${text.replace(/\p{Script=Han}/gu, 'word')}`;
+    }, destroy() {} };
+  },
+};
+// This page is not x.com, so the content-script entry correctly declines it.
+// Start the same X adapter, provider, and language pair the entry uses there.
+const { startNativeType } = await import('../core/controller.ts');
+const { createOverlay } = await import('../ui/overlay.ts');
+const { defaultLanguagePair } = await import('../languages/config.ts');
+const { xPlatform } = await import('../platforms/x.ts');
+const { getTranslationProvider } = await import('../translators/registry.ts');
+const { createMemoryBackend, createSettingsStore, getDefaultSettings } = await import('../settings/store.ts');
+const settingsBackend = createMemoryBackend();
+const settingsStore = createSettingsStore(settingsBackend);
+let detectorBehavior = async () => { throw new Error('Language detection should not run for the default Chinese trigger'); };
+const detector = {
+  detectionProgressText: progress => `Downloading language detection… ${progress}%`,
+  prepare() {},
+  detect: (text, source, detectionRequest) => detectorBehavior(text, source, detectionRequest),
+  reset() {},
+  dispose() {},
+};
+const invalidation = new AbortController();
+startNativeType({
+  platform: xPlatform,
+  provider: getTranslationProvider('chrome'),
+  languagePair: defaultLanguagePair,
+  settings: settingsStore,
+  detector,
+  host: {
+    listen: (target, type, listener) => target.addEventListener(type, listener, { signal: invalidation.signal }),
+    onInvalidated(callback) { invalidation.signal.addEventListener('abort', callback); },
+    openSettings() { window.open('/tests/settings-page.html', 'nativetype-settings'); },
+  },
+});
+const invalidate = () => invalidation.abort();
+const first = document.querySelector('[data-testid="tweetTextarea_0"]');
+const second = document.querySelector('[data-testid="tweetTextarea_1"]');
+// Minimal editor adapter: production X supplies its own Draft.js paste handler.
+let handledPastes = 0;
+let normalizedSelections = 0;
+for (const editor of [first, second]) editor.addEventListener('mouseup', () => {
+  const selection = getSelection();
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  if (!nodes.length || selection.toString() !== editor.innerText) return;
+  const normalized = document.createRange();
+  normalized.setStart(nodes[0], 0);
+  normalized.setEnd(nodes.at(-1), nodes.at(-1).textContent.length);
+  selection.removeAllRanges();
+  selection.addRange(normalized);
+  normalizedSelections++;
+});
+for (const editor of [first, second]) editor.addEventListener('paste', event => {
+  event.preventDefault();
+  handledPastes++;
+  document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+});
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const root = () => document.querySelector('[data-nativetype]').shadowRoot;
+const shown = () => getComputedStyle(document.querySelector('[data-nativetype]')).display !== 'none';
+const preview = () => root().querySelector('p').textContent;
+const button = text => [...root().querySelectorAll('button')].find(el => el.textContent === text);
+const input = (el, text) => { el.focus(); el.textContent = text; el.dispatchEvent(new InputEvent('input', { bubbles: true })); };
+const results = document.querySelector('#results');
+const assert = (condition, description) => { if (!condition) throw new Error(description); results.textContent += `\nPASS ${description}`; };
+window.__nativetypeFixtureReady = true;
+document.querySelector('#run').addEventListener('click', async () => {
+  results.textContent = 'Running';
+  try {
+    assert(xPlatform.writingContext(first) === 'post', 'Home composer is a new post');
+    assert(xPlatform.writingContext(second) === 'reply', 'Reply dialog is a reply');
+    const firstMinHeight = first.style.getPropertyValue('min-height');
+    const firstMinHeightPriority = first.style.getPropertyPriority('min-height');
+    const languageOverlay = createOverlay(() => {}, () => {}, () => ({ container: document.body }), { source: 'zh', target: 'ja' });
+    languageOverlay.show(first, { kind: 'translated', text: 'こんにちは' });
+    assert(languageOverlay.host.shadowRoot.querySelector('header').textContent === 'NativeType · Chinese → Japanese'
+      && languageOverlay.host.shadowRoot.querySelector('p').lang === 'ja', 'Overlay label and text language follow the supplied language pair');
+    languageOverlay.destroy();
+    input(first, 'Hello'); await sleep(1100);
+    assert(calls.length === 0 && !shown(), 'English text does not translate');
+    input(first, '你好'); await sleep(400); input(first, '你好世界'); await sleep(650);
+    assert(calls.length === 0 && !shown(), 'Debounce resets on continued input');
+    await sleep(450);
+    assert(shown() && button('Enable translation'), 'First use requests activation');
+    button('Enable translation').click(); await sleep(80);
+    assert(calls.length === 1 && shown() && button('Replace') && creates === 1, 'Translation preview appears');
+    first.dispatchEvent(new InputEvent('input', { bubbles: true })); await sleep(1100);
+    assert(calls.length === 1, 'Unchanged input is deduplicated');
+    button('Retry').click(); await sleep(80);
+    assert(calls.length === 2 && creates === 1, 'Retry translates again and reuses instance');
+    const draftBeforeClose = first.innerText;
+    delay = 120;
+    button('Retry').click(); await sleep(20);
+    root().querySelector('button[aria-label="Close translation preview"]').click(); await sleep(180);
+    assert(!shown() && !document.querySelector('[data-nativetype]').matches(':popover-open') && first.innerText === draftBeforeClose, 'Close preserves the draft and pending translation cannot reopen the preview');
+    assert(first.style.getPropertyValue('min-height') === firstMinHeight && first.style.getPropertyPriority('min-height') === firstMinHeightPriority, 'Close restores the input height and original style priority');
+    delay = 15;
+    input(first, '你好世界！'); await sleep(1100);
+    assert(shown() && button('Replace'), 'Editing after close shows the next translation preview');
+    const pastesBefore = handledPastes;
+    const english = preview(); button('Replace').click(); await sleep(150);
+    assert(first.innerText === english && handledPastes === pastesBefore + 1 && !shown(), 'Replace delegates text insertion to the editor paste handler');
+    assert(normalizedSelections > 0, 'Equivalent text-node selection boundaries are accepted');
+    document.execCommand('insertText', false, '!'); await sleep(80);
+    assert(first.innerText === english + '!', 'Caret remains editable after replacement');
+    input(first, '多行'); await sleep(1100); button('Replace').click(); await sleep(150);
+    assert(first.innerText === 'First line\nSecond line', 'Multiline replacement retains paragraph breaks');
+    input(first, ''); await sleep(1100);
+    const beforeIME = calls.length;
+    first.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    input(first, '输入中'); await sleep(1100);
+    assert(calls.length === beforeIME, 'IME composition suppresses translation');
+    first.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await sleep(1100);
+    assert(calls.length === beforeIME + 1 && shown(), 'IME commit schedules translation');
+    delay = 1400;
+    input(first, '旧'); await sleep(1100);
+    input(first, '新'); await sleep(1100); await sleep(400);
+    assert(!preview().includes('English:'), 'Stale completed result cannot overwrite current loading state');
+    await sleep(1000);
+    assert(shown() && preview() === 'English: word', 'Newest request wins');
+    delay = 15;
+    const heightTarget = second.parentElement;
+    const originalMinHeight = heightTarget.style.getPropertyValue('min-height');
+    const originalMinHeightPriority = heightTarget.style.getPropertyPriority('min-height');
+    const dialogHeightBefore = second.closest('[role="dialog"]').getBoundingClientRect().height;
+    const toolbarTopBefore = document.querySelector('[aria-label="Reply actions"]').getBoundingClientRect().top - second.closest('[role="dialog"]').getBoundingClientRect().top;
+    input(second, '回复'); await sleep(1100);
+    assert(first.style.getPropertyValue('min-height') === firstMinHeight, 'Switching composers restores the previous input height');
+    assert(document.querySelector('[data-nativetype]').parentElement.getAttribute('role') === 'dialog', 'Preview stays inside modal focus boundary');
+    const host = document.querySelector('[data-nativetype]');
+    const previewRect = host.getBoundingClientRect();
+    const textRange = document.createRange();
+    textRange.selectNodeContents(second.firstChild);
+    const textRects = [...textRange.getClientRects()];
+    const firstLine = textRects[0];
+    const textBottom = Math.max(...textRects.map(rect => rect.bottom));
+    const expectedLeft = Math.max(8, Math.min(firstLine.left + parseFloat(getComputedStyle(second).fontSize) * 2, innerWidth - previewRect.width - 8));
+    assert(Math.abs(previewRect.left - expectedLeft) < 1 && Math.abs(previewRect.top - textBottom - 4) < 1, 'Floating preview stays four pixels below the text with a two-character indent');
+    assert(getComputedStyle(root().querySelector('section')).backgroundColor === 'rgb(20, 20, 20)', 'Transparent white composer inherits the dark dialog theme');
+    const dialogRect = second.closest('[role="dialog"]').getBoundingClientRect();
+    assert(host.matches(':popover-open') && getComputedStyle(host).position === 'fixed', 'Preview floats in the top layer outside dialog clipping');
+    assert(dialogRect.height > dialogHeightBefore && document.querySelector('[aria-label="Reply actions"]').getBoundingClientRect().top - dialogRect.top > toolbarTopBefore && previewRect.bottom + 11 <= heightTarget.getBoundingClientRect().bottom, 'Preview expands the input area and moves the toolbar below the card');
+    const singleLineHeight = heightTarget.getBoundingClientRect().height;
+    const callsBeforeLineBreak = calls.length;
+    input(second, '回复\n第二行\n第三行'); await sleep(80);
+    textRange.selectNodeContents(second.firstChild);
+    const multilineBottom = Math.max(...[...textRange.getClientRects()].map(rect => rect.bottom));
+    assert(shown() && Math.abs(host.getBoundingClientRect().top - multilineBottom - 4) < 1 && calls.length === callsBeforeLineBreak && button('Replace').hidden, 'Line breaks move the pending preview immediately without waiting for translation or offering stale replacement');
+    await sleep(1100);
+    assert(host.getBoundingClientRect().bottom + 11 <= heightTarget.getBoundingClientRect().bottom && heightTarget.getBoundingClientRect().height > singleLineHeight, 'Multiple text lines and the preview fit inside the expanded input area');
+    input(second, '自动换行文字'.repeat(30)); await sleep(80);
+    textRange.selectNodeContents(second.firstChild);
+    const wrappedLines = [...textRange.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+    assert(wrappedLines.length > 1 && Math.abs(host.getBoundingClientRect().top - Math.max(...wrappedLines.map(rect => rect.bottom)) - 4) < 1, 'Automatic wrapping also keeps the preview below the last rendered line');
+    input(second, '回复\n第二行\n第三行'); await sleep(1100);
+    button('Replace').click(); await sleep(150);
+    assert(first.innerText === '新' && second.innerText.startsWith('English:'), 'Only the active composer is replaced');
+    assert(!host.matches(':popover-open') && second.parentElement.style.marginBottom === '0px' && second.style.marginBottom === '0px', 'Hiding preview restores the original container spacing');
+    assert(heightTarget.style.getPropertyValue('min-height') === originalMinHeight && heightTarget.style.getPropertyPriority('min-height') === originalMinHeightPriority, 'Replace restores the input height and original style priority');
+    const beforeReplyDisable = calls.length;
+    const replyDraft = second.innerText;
+    await settingsStore.save({ ...getDefaultSettings(), contexts: { x: { post: true, reply: false, quote: true } } });
+    await sleep(40);
+    assert(!shown() && second.innerText === replyDraft, 'Disabling replies clears that preview and keeps the draft');
+    input(second, '回复已关闭'); await sleep(1100);
+    assert(calls.length === beforeReplyDisable && second.innerText === '回复已关闭', 'A disabled reply does not translate or rewrite the draft');
+    input(first, '帖子仍可用'); await sleep(1100);
+    assert(calls.length === beforeReplyDisable + 1 && shown(), 'Disabling replies leaves new posts enabled');
+    await settingsStore.save(getDefaultSettings());
+    first.blur();
+    await sleep(40);
+    const inactiveCalls = calls.length;
+    first.textContent = '后台中文';
+    first.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await sleep(1100);
+    assert(calls.length === inactiveCalls, 'Inactive composer edits do not start translation');
+    input(second, '删除测试'); await sleep(1100); second.closest('[role="dialog"]').remove(); await sleep(80);
+    assert(!document.querySelector('[data-nativetype]') || !shown(), 'Removing active composer dialog cleans preview');
+    assert(heightTarget.style.getPropertyValue('min-height') === originalMinHeight, 'Removing the composer also clears the temporary input height');
+    const quoteDialog = document.createElement('div');
+    quoteDialog.setAttribute('role', 'dialog');
+    quoteDialog.setAttribute('aria-label', 'Quote dialog');
+    const quote = document.createElement('div');
+    quote.contentEditable = 'true';
+    quote.setAttribute('role', 'textbox');
+    quote.setAttribute('data-testid', 'tweetTextarea_quote');
+    quote.setAttribute('aria-label', 'Quote');
+    const quoteAttachment = document.createElement('div');
+    quoteAttachment.dataset.testid = 'quoteTweet';
+    quoteDialog.append(quote, quoteAttachment);
+    document.body.append(quoteDialog);
+    quote.addEventListener('paste', event => {
+      event.preventDefault();
+      document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+    });
+    assert(xPlatform.writingContext(quote) === 'quote', 'Quote attachment is not treated as a new post');
+    const quoteCalls = calls.length;
+    input(quote, '引用'); await sleep(1100);
+    assert(calls.length === quoteCalls + 1 && shown() && preview().includes('word'), 'Quote composer is recognized by the X selector');
+    const quoteDraft = quote.innerText;
+    await settingsStore.save({ ...getDefaultSettings(), contexts: { x: { post: true, reply: true, quote: false } } });
+    await sleep(40);
+    assert(!shown() && quote.innerText === quoteDraft, 'Disabling quotes removes the preview and keeps the draft');
+    input(quote, '引用已关闭'); await sleep(1100);
+    assert(calls.length === quoteCalls + 1, 'A disabled quote does not translate');
+    input(first, '帖子不受引用开关影响'); await sleep(1100);
+    assert(calls.length === quoteCalls + 2, 'Disabling quotes leaves new posts enabled');
+    await settingsStore.save(getDefaultSettings());
+    input(quote, '引用恢复'); await sleep(1100);
+    assert(calls.length === quoteCalls + 3 && shown(), 'Turning quotes back on translates again');
+    quoteDialog.remove(); await sleep(80);
+    assert(!document.querySelector('[data-nativetype]') || !shown(), 'Removing the active quote composer cleans the preview');
+    const column = document.createElement('div');
+    column.dataset.testid = 'primaryColumn';
+    const inlineHome = document.createElement('div');
+    inlineHome.contentEditable = 'true';
+    inlineHome.setAttribute('role', 'textbox');
+    inlineHome.dataset.testid = 'tweetTextarea_home2';
+    const tweetCell = document.createElement('div');
+    tweetCell.dataset.testid = 'cellInnerDiv';
+    const tweet = document.createElement('article');
+    tweet.dataset.testid = 'tweet';
+    tweetCell.append(tweet);
+    const replyCell = document.createElement('div');
+    replyCell.dataset.testid = 'cellInnerDiv';
+    const inlineReply = document.createElement('div');
+    inlineReply.contentEditable = 'true';
+    inlineReply.setAttribute('role', 'textbox');
+    inlineReply.dataset.testid = 'tweetTextarea_inline';
+    replyCell.append(inlineReply);
+    column.append(inlineHome, tweetCell, replyCell);
+    document.body.append(column);
+    assert(xPlatform.writingContext(inlineHome) === 'post' && xPlatform.writingContext(inlineReply) === 'reply', 'Inline reply is distinct from the home composer');
+    const replyToQuote = document.createElement('div');
+    replyToQuote.setAttribute('role', 'dialog');
+    const quotedParent = document.createElement('article');
+    quotedParent.dataset.testid = 'tweet';
+    const nestedQuote = document.createElement('div');
+    nestedQuote.dataset.testid = 'quoteTweet';
+    quotedParent.append(nestedQuote);
+    const replyEditor = document.createElement('div');
+    replyEditor.contentEditable = 'true';
+    replyEditor.setAttribute('role', 'textbox');
+    replyEditor.dataset.testid = 'tweetTextarea_replyquote';
+    replyToQuote.append(quotedParent, replyEditor);
+    document.body.append(replyToQuote);
+    assert(xPlatform.writingContext(replyEditor) === 'reply', 'Replying to a quoted post is still a reply');
+    const ambiguous = document.createElement('div');
+    ambiguous.setAttribute('role', 'dialog');
+    const ambiguousTweet = document.createElement('article');
+    ambiguousTweet.dataset.testid = 'tweet';
+    const ambiguousEditor = document.createElement('div');
+    ambiguousEditor.contentEditable = 'true';
+    ambiguousEditor.setAttribute('role', 'textbox');
+    ambiguousEditor.dataset.testid = 'tweetTextarea_ambiguous';
+    const looseQuote = document.createElement('div');
+    looseQuote.dataset.testid = 'quoteTweet';
+    ambiguous.append(ambiguousTweet, ambiguousEditor, looseQuote);
+    document.body.append(ambiguous);
+    assert(xPlatform.writingContext(ambiguousEditor) === 'unknown', 'Conflicting reply and quote signals do not auto-activate');
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const menuQuote = document.createElement('div');
+    menuQuote.dataset.testid = 'quoteTweet';
+    menuQuote.setAttribute('role', 'menuitem');
+    menu.append(menuQuote);
+    const menuDialog = document.createElement('div');
+    menuDialog.setAttribute('role', 'dialog');
+    const menuEditor = document.createElement('div');
+    menuEditor.contentEditable = 'true';
+    menuEditor.setAttribute('role', 'textbox');
+    menuEditor.dataset.testid = 'tweetTextarea_menu';
+    menuDialog.append(menuEditor, menu);
+    document.body.append(menuDialog);
+    assert(xPlatform.writingContext(menuEditor) === 'post', 'A quote menu item does not turn a new post into a quote');
+    column.remove(); replyToQuote.remove(); ambiguous.remove(); menuDialog.remove();
+    delay = 500;
+    input(first, '旧语言结果'); await sleep(1100);
+    await settingsStore.save({ ...getDefaultSettings(), translation: { sourceLanguage: 'en', targetLanguage: 'zh' } });
+    detectorBehavior = async (text, source) => (source === 'en' && /\p{Script=Han}/u.test(text) ? { status: 'skip' } : { status: 'match' });
+    await sleep(700);
+    assert(!shown() || !preview().includes('English:'), 'A stale translation cannot replace the new language pair');
+    delay = 15;
+    const afterPairChange = calls.length;
+    input(first, 'Hello there friend'); await sleep(1100);
+    assert(calls.length === afterPairChange && shown() && button('Enable translation'), 'A new language pair waits for Enable translation');
+    button('Enable translation').click(); await sleep(80);
+    assert(calls.length === afterPairChange + 1 && shown() && preview().includes('Hello there friend'), 'English to Chinese runs when detection matches');
+    input(first, '这是一段不会匹配英文的文字'); await sleep(1100);
+    assert(calls.length === afterPairChange + 1 && !shown(), 'Text outside the trigger language does not translate');
+    const beforeUnavailable = calls.length;
+    detectorBehavior = async () => ({ status: 'unavailable', message: 'Language detection is unavailable in this browser, so NativeType will not guess the input language.' });
+    input(first, 'This sentence is long enough'); await sleep(1100);
+    assert(shown() && preview().includes('will not guess') && calls.length === beforeUnavailable, 'Unavailable detection explains itself and does not translate');
+    detectorBehavior = async (_text, _source, detectionRequest) => detectionRequest.activated
+      ? { status: 'match' }
+      : { status: 'enable', message: 'Enable language detection. Chrome may download a small model the first time.' };
+    input(first, 'Please translate this sentence'); await sleep(1100);
+    assert(button('Enable translation'), 'Detection download waits for Enable translation');
+    button('Enable translation').click(); await sleep(80);
+    assert(shown() && button('Replace'), 'Enabled detection continues into translation');
+    await settingsStore.save(getDefaultSettings());
+    delay = 15;
+    const beforeInvalidate = calls.length;
+    invalidate();
+    input(first, '失效后'); await sleep(1100);
+    assert(!document.querySelector('[data-nativetype]') && calls.length === beforeInvalidate, 'Invalidation destroys the preview and stops translation');
+    results.textContent += '\nDONE: All local regression checks passed.';
+  } catch (error) { results.textContent += `\nFAIL ${error.message}`; }
+});
+</script>
