@@ -127,7 +127,7 @@
         </p>
 
         <p class="updated">
-            Last updated: October 27, 2026
+            Last updated: November 11, 2026
         </p>
 
         <div class="summary">
@@ -137,8 +137,9 @@
             not sell your data, does not use your draft text for advertising, and
             does not transmit your draft text to NativeType-controlled servers.
             Optional usage statistics are disabled by default. If you turn them
-            on, NativeType sends a random installation ID and one of three event
-            names to its own Cloudflare Worker; it never sends your text,
+            on, NativeType immediately sends an analytics-enabled event with a
+            random installation ID, followed by usage reports to its own
+            Cloudflare Worker; it never sends your text,
             translations, page URLs, titles, or account information.
         </div>
     </header>
@@ -224,8 +225,23 @@
         </p>
 
         <p>
-            NativeType does not transmit the text you enter to
+            Free local translation does not transmit the text you enter to
             NativeType-controlled servers for translation.
+        </p>
+
+        <p>
+            Developer self-test builds also provide Improve with AI. Only clicking
+            this button sends the original draft, local translation, and language
+            pair to Cloudflare Workers AI (Gemma) for cloud processing. The result
+            is previewed; replacing a draft requires your explicit choice. NativeType
+            does not persist these texts or include them in application logs or
+            statistics. Operational logs retain only aggregate model and outcome metrics.
+            A short-lived developer token may remain in extension session storage
+            and is cleared when the browser restarts. Plus AI requests use the
+            license key you activate on the Plus tab. That key is stored in
+            extension local storage, sent only to NativeType, kept out of web
+            pages, and removed when you choose Remove License Key. Plus expiry
+            does not delete it.
         </p>
 
         <p>
@@ -254,7 +270,9 @@
             Language preferences, X context switches, and your statistics choice
             are saved locally using Chrome extension storage. A random UUID v4
             installation ID is created and stored locally only after you enable
-            usage statistics. It persists across browser restarts and normal
+            usage statistics. Enabling sends this ID with an
+            <code>analytics_enabled</code> event to register participation before
+            any translation. It persists across browser restarts and normal
             extension updates, and is not based on your account or device hardware.
         </p>
 
@@ -294,7 +312,7 @@
         <p>
             NativeType requests access only to supported websites where its
             translation functionality needs to operate and to its statistics
-            API host, <code>https://typewith.si</code>.
+            API host, <code>https://nativetype.here</code>.
         </p>
 
         <p>
@@ -311,8 +329,9 @@
         <p>
             These permissions are not used to monitor unrelated browsing activity.
             The API host permission allows the extension background service worker
-            to send optional usage statistics after you enable them. It does not
-            send website content to that host.
+            to send optional usage statistics after you enable them. A developer
+            AI endpoint is permitted only when explicitly configured in a self-test
+            build; it receives the current draft only after Improve with AI is clicked.
         </p>
     </section>
 
@@ -333,9 +352,10 @@
 
         <p>
             When enabled, the extension sends only a random installation ID and
-            the event name <code>translation_success</code>,
-            <code>replace_success</code>, or <code>translation_error</code> over
-            HTTPS to <code>https://typewith.si/api/v1/events</code>, a
+            the event name <code>analytics_enabled</code>, <code>translation_success</code>,
+            <code>replace_success</code>, <code>translation_error</code>, or
+            <code>ai_improve_replaced</code> over
+            HTTPS to <code>https://nativetype.here/api/v1/events</code>, a
             NativeType-controlled Cloudflare Worker. These counts help us
             understand use and reliability. They do not measure individual people
             or translation quality. We do not collect draft text, translations,
@@ -393,11 +413,11 @@
 
         <p>
             <a
-                    href="https://github.com/webszy/NativeType/issues"
+                    href="https://github.com/webszy/nativeType-open/issues"
                     target="_blank"
                     rel="noopener noreferrer"
             >
-                github.com/webszy/NativeType/issues
+                github.com/webszy/nativeType-open/issues
             </a>
         </p>
     </section>

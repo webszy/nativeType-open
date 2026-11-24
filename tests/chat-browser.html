@@ -22,7 +22,7 @@ const assert = (condition, description) => {
   results.textContent += `\nPASS ${description}`;
 };
 const originalPath = location.pathname;
-const settings = createSettingsStore(createMemoryBackend());
+const settings = createSettingsStore(createMemoryBackend({ translation: { mode: 'automatic' } }));
 const invalidation = new AbortController();
 let delay = 15;
 const requests = [];
@@ -43,8 +43,28 @@ startNativeType({
     onInvalidated: listener => invalidation.signal.addEventListener('abort', listener),
   },
 });
-const overlay = () => document.querySelector('[data-nativetype]');
-const shown = () => overlay()?.style.display === 'block';
+function walkShadow(node, visit) {
+  visit(node);
+  for (const element of node.querySelectorAll?.('*') ?? []) {
+    if (element.shadowRoot) walkShadow(element.shadowRoot, visit);
+  }
+}
+const overlay = () => {
+  let found = null;
+  walkShadow(document, node => {
+    found ??= node.querySelector?.('[data-nativetype]') ?? null;
+  });
+  return found;
+};
+const shown = () => {
+  const host = overlay();
+  return !!host && host.isConnected && host.style.display === 'block';
+};
+const previewCount = () => {
+  let count = 0;
+  walkShadow(document, node => { count += node.querySelectorAll?.('[data-nativetype]').length ?? 0; });
+  return count;
+};
 const preview = () => overlay().shadowRoot.querySelector('p').textContent;
 const replace = () => [...overlay().shadowRoot.querySelectorAll('button')].find(button => button.textContent === 'Replace').click();
 const nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
@@ -91,19 +111,30 @@ document.querySelector('#run').addEventListener('click', async () => {
   try {
     history.pushState(null, '', '/i/chat/100-200');
     await sleep(40);
+    const resting = { input: chat.editor.getBoundingClientRect().height, form: chat.form.getBoundingClientRect().height, scroll: chat.history.scrollTop };
     chat.input('中文聊天草稿');
     await sleep(1100);
     assert(shown() && preview() === 'Translation 1', 'Chinese input in the open shadow root produces the existing Preview');
     assert(getComputedStyle(overlay().shadowRoot.querySelector('section')).color === 'rgb(15, 20, 25)', 'The modern Chat sRGB background keeps readable preview colors in the light theme');
-    const before = { input: chat.editor.getBoundingClientRect().height, form: chat.form.getBoundingClientRect().height, scroll: chat.history.scrollTop };
-    assert(overlay().getBoundingClientRect().bottom <= chat.editor.getBoundingClientRect().top - 3, 'Preview stays above the input and Send button');
-    assert(overlay().matches(':popover-open') && overlay().parentElement === document.body, 'Top-layer preview escapes composer overflow and Shadow DOM clipping');
-    assert(!chat.editor.style.minHeight && !chat.inputContainer.style.minHeight && chat.history.scrollTop === before.scroll, 'Preview leaves input sizing and message-list scrolling intact');
+    const host = overlay();
+    const previewBox = host.getBoundingClientRect();
+    const editorBox = chat.editor.getBoundingClientRect();
+    const sendBox = chat.send.getBoundingClientRect();
+    assert(host.parentElement === chat.inputContainer && chat.editor.nextElementSibling === host, 'Preview follows the draft inside the chat input column');
+    assert(previewBox.top >= editorBox.bottom - 1 && previewBox.right <= sendBox.left + 1, 'Preview sits below the draft and does not cover Send');
+    assert(getComputedStyle(host).position === 'static' && !host.matches(':popover-open'), 'Chat preview stays in normal flow');
+    assert(chat.form.getBoundingClientRect().height > resting.form, 'The chat composer grows with the preview');
+    assert(!chat.editor.style.minHeight && !chat.inputContainer.style.minHeight && chat.editor.getBoundingClientRect().height === resting.input && chat.history.scrollTop === resting.scroll, 'Preview leaves input sizing and message-list scrolling intact');
+    const replaceButton = [...host.shadowRoot.querySelectorAll('button')].find(button => button.textContent === 'Replace');
+    replaceButton.focus();
+    await sleep(40);
+    assert(shown() && document.activeElement === chat.host && chat.root.activeElement === host
+      && host.shadowRoot.activeElement === replaceButton, 'Native focus in the nested preview survives focusin and deferred focusout');
     replace(); await sleep(100);
     assert(chat.editor.value === 'Translation 1' && chat.state() === 'Translation 1' && !shown(), 'Replace synchronizes the controlled draft and closes Preview');
     assert(chat.sent.length === 0, 'Replace never submits the form');
     assert(chat.root.activeElement === chat.editor && chat.editor.selectionStart === chat.editor.value.length, 'Replace preserves editor focus and places the caret at the end');
-    assert(chat.editor.getBoundingClientRect().height === before.input && chat.form.getBoundingClientRect().height === before.form, 'Showing and hiding Preview keeps the composer height');
+    assert(chat.editor.getBoundingClientRect().height === resting.input && Math.abs(chat.form.getBoundingClientRect().height - resting.form) < 1, 'Hiding Preview restores the composer height');
     chat.input(`${chat.editor.value}!`);
     chat.editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
     await sleep(40);
@@ -136,7 +167,7 @@ document.querySelector('#run').addEventListener('click', async () => {
     chat.host.remove(); await sleep(40);
     assert(!shown(), 'Removing the shadow host clears the preview');
     const remounted = mount(); remounted.input('重新挂载的编辑器'); await sleep(1100);
-    assert(shown() && document.querySelectorAll('[data-nativetype]').length === 1, 'A remounted input works with one preview');
+    assert(shown() && previewCount() === 1, 'A remounted input works with one preview');
     remounted.host.remove();
     results.textContent += '\nDONE: All simulated Chat regression checks passed.';
   } catch (error) {

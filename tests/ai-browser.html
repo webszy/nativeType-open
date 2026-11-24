@@ -1,0 +1,105 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NativeType AI Improve regression fixture</title>
+<style>
+body { font:16px system-ui; margin:24px; background:white; color:#111; }
+.composer { border:1px solid #ccc; margin:16px 0 260px; padding:12px; max-width:540px; }
+[contenteditable], textarea { min-height:60px; width:100%; white-space:pre-wrap; }
+pre { white-space:pre-wrap; }
+</style>
+<h1>AI Improve regression fixture</h1>
+<p>Real DOM and NativeType adapters; local translation, Worker response and controlled editor state are simulated. No cloud requests or real messages.</p>
+<button id="run">Run AI regression tests</button>
+<pre id="results">Ready</pre>
+<script type="module">
+import { startNativeType } from '../core/controller.ts';
+import { xPlatform } from '../platforms/x.ts';
+import { createMemoryBackend, createSettingsStore } from '../settings/store.ts';
+import { createPolishClient } from '../ai/client.ts';
+import { createPolishService } from '../ai/background.ts';
+import { chatComposer, attachedPost } from './platforms/x-fixture.mjs';
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const results = document.querySelector('#results');
+const assert = (value, text) => { if (!value) throw new Error(text); results.textContent += `\nPASS ${text}`; };
+const drafts = new Map();
+const source = '@walter 我没说 NativeType v0.1.2 值 $20。https://example.com/a';
+let calls = 0, delay = 10, fail = false, sent = 0, pasted = 0;
+const service = createPolishService({ endpoint: 'https://fixture.invalid/api/v1/polish', readLicense: async () => ({ licenseKey: 'fixture-license-key', lastVerification: { status: 'active', plan: 'monthly', validUntil: null } }),
+  fetch: async (_url, init) => {
+    calls++; const input = JSON.parse(init.body);
+    assert(Object.keys(input).sort().join(',') === 'draft,original_source,source_language,target_language,writing_context', 'Cloud payload contains the translation fields and writing context');
+    await sleep(delay); // Deliberately ignores abort: the UI must also reject stale responses.
+    if (fail) return Response.json({ success:false, error:'MODEL_ERROR', request_id:'fixture' }, { status:502 });
+    return Response.json({ success:true, model:'@cf/google/gemma-4-26b-a4b-it', text:`AI: ${input.draft}`, request_id:'fixture', elapsed_ms:1, finish_reason:'stop', usage:{} });
+  },
+});
+const polish = createPolishClient(message => message.type === 'ai:cancel'
+  ? Promise.resolve(service.cancel('fixture', message.requestId)) : service.request('fixture', message.requestId, message.input));
+const invalidation = new AbortController();
+startNativeType({ platform:xPlatform, languagePair:{ source:'zh', target:'en' }, settings:createSettingsStore(createMemoryBackend({ translation: { mode: 'automatic' } })), polish,
+  provider:{ prepare(){}, retainPair(){}, dispose(){}, async translate(text){ return `Local: ${text}`; } },
+  host:{ listen:(target,type,listener) => target.addEventListener(type,listener,{signal:invalidation.signal}), onInvalidated:fn => invalidation.signal.addEventListener('abort',fn) },
+});
+const root = () => {
+  const walk = node => {
+    const found = node.querySelector?.('[data-nativetype]');
+    if (found) return found;
+    for (const element of node.querySelectorAll?.('*') ?? []) {
+      if (element.shadowRoot) {
+        const nested = walk(element.shadowRoot);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  };
+  return walk(document).shadowRoot;
+};
+const button = text => [...root().querySelectorAll('button')].find(el => el.textContent === text);
+const preview = () => root().querySelector('p').textContent;
+const input = (editor, text) => { editor.focus(); if (editor instanceof HTMLTextAreaElement) editor.value=text; else editor.textContent=text;
+  drafts.set(editor,text); editor.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true})); };
+function mount(context){
+  if(context === 'chat'){
+    history.replaceState(null,'','/i/chat/100-200'); const chat=chatComposer(document,{text:''}); chat.host.className='composer';
+    chat.form.addEventListener('submit',event=>{event.preventDefault();sent++;});
+    chat.editor.addEventListener('input',()=>drafts.set(chat.editor,chat.editor.value)); return chat.editor;
+  }
+  history.replaceState(null,'','/home'); const shell=document.createElement('div'); shell.className='composer';
+  if(context !== 'post') shell.setAttribute('role','dialog');
+  if(context === 'reply'){const parent=document.createElement('article');parent.dataset.testid='tweet';shell.append(parent);}
+  const editor=document.createElement('div');editor.contentEditable='true';editor.setAttribute('role','textbox');editor.dataset.testid='tweetTextarea_0';shell.append(editor);
+  if(context === 'quote') shell.append(attachedPost(document).attachment);
+  const post=document.createElement('button');post.textContent='Publish';post.addEventListener('click',()=>sent++);shell.append(post);document.body.append(shell);
+  editor.addEventListener('paste',event=>{event.preventDefault();pasted++;document.execCommand('insertText',false,event.clipboardData.getData('text/plain'));drafts.set(editor,editor.innerText);});
+  return editor;
+}
+document.querySelector('#run').addEventListener('click',async()=>{
+  results.textContent='Running';
+  try{
+    for(const context of ['post','reply','quote','chat']){
+      const before=calls; const editor=mount(context); input(editor,source); await sleep(1150);
+      assert(xPlatform.writingContext(editor) === context, `${context}: existing context detection is reused`);
+      assert(!button('Improve with AI').hidden, `${context}: manual AI action is visible`);
+      assert(root().textContent.includes('cloud processing'), `${context}: cloud notice precedes submission`);
+      assert(calls===before, `${context}: local typing makes no cloud request`);
+      button('Improve with AI').click(); await sleep(5);
+      assert(button('Improving…').disabled, `${context}: improving blocks duplicate submission`);
+      await sleep(80); assert(preview()===`AI: Local: ${source}` && xPlatform.getText(editor)===source, `${context}: AI success only updates Preview`);
+      button('Local').click();assert(preview()===`Local: ${source}`, `${context}: Local remains complete`);
+      button('AI Improved').click();button('Replace').click();await sleep(160);
+      assert(drafts.get(editor)===`AI: Local: ${source}` && xPlatform.getText(editor)===drafts.get(editor), `${context}: Replace reaches the editor input/paste handler and controlled state`);
+      assert(sent===0, `${context}: publishing and sending are never triggered`);
+      editor.closest('.composer')?.remove();
+    }
+    const editor=mount('post');input(editor,source);await sleep(1150);fail=true;
+    button('Improve with AI').click();await sleep(80);
+    assert(preview()===`Local: ${source}` && !button('Retry AI').disabled, 'Model failure preserves Local and offers Retry AI');
+    fail=false;delay=400;button('Retry AI').click();await sleep(20);input(editor,'已经修改的新原文');await sleep(500);
+    assert(!preview().startsWith('AI:'), 'Late old AI response cannot become the new draft Preview');
+    await sleep(650);button('Improve with AI').click();await sleep(450);
+    assert(preview()==='AI: Local: 已经修改的新原文', 'Explicit retry improves only the new draft');
+    assert(pasted===3 && sent===0, 'Post/Reply/Quote use existing paste; Chat uses native setter; no Send/Post');
+    results.textContent+='\nALL PASSED';
+  }catch(error){results.textContent+=`\nFAIL ${error.message}`;console.error(error);}
+});
+</script>

@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NativeType analytics browser regression</title>
+<style>
+  body { font:16px system-ui; padding:20px; }
+  #composer { max-width:600px; border:1px solid #ddd; padding:12px; }
+  [contenteditable] { min-height:60px; white-space:pre-wrap; }
+  #results { white-space:pre-wrap; }
+</style>
+<button id="run">Run analytics checks</button>
+<pre id="results"></pre>
+<div id="composer"><div id="editor" contenteditable="true" role="textbox"></div></div>
+<script type="module">
+import { startNativeType } from '../core/controller.ts';
+import { createSettingsStore, createMemoryBackend, getDefaultSettings } from '../settings/store.ts';
+import { createAnalyticsClient, eventFromMessage } from '../analytics/client.ts';
+import { createAnalyticsService } from '../analytics/background.ts';
+
+const output = document.querySelector('#results');
+const editor = document.querySelector('#editor');
+const composer = document.querySelector('#composer');
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(predicate) {
+  for (let i = 0; i < 100; i++) { if (predicate()) return; await delay(25); }
+  throw new Error('Timed out waiting for fixture state');
+}
+function check(condition, label) { if (!condition) throw new Error(label); output.textContent += `PASS ${label}\n`; }
+const payloads = [];
+const events = type => payloads.filter(value => value.event === type);
+const host = () => composer.querySelector('[data-nativetype="preview"]');
+const button = text => [...host().shadowRoot.querySelectorAll('button')].find(value => value.textContent === text);
+function input(text) { editor.textContent = text; editor.dispatchEvent(new InputEvent('input', { bubbles:true, inputType:'insertText', data:null })); }
+
+let close;
+document.querySelector('#run').onclick = async () => {
+  try {
+    const settings = getDefaultSettings(); settings.analytics.enabled = true; settings.translation.mode = 'manual';
+    settings.translation.sourceLanguage = 'zh'; settings.translation.targetLanguage = 'en'; settings.contexts.x.post = true;
+    const store = createSettingsStore(createMemoryBackend(settings));
+    let installId;
+    const analytics = createAnalyticsService({ endpoint:'https://analytics.test/api/v1/events', storage: {
+      read: async () => ({ settings:await store.load(), installId }),
+      writeInstallId: async value => { installId = value; }, removeInstallId: async () => { installId = undefined; },
+      watchSettings(listener) { let previous = settings; return store.subscribe(next => { listener(next, previous); previous = next; }); },
+    }, fetch: async (_url, init) => { payloads.push(JSON.parse(init.body)); return new Response(null, { status:204 }); } });
+    await analytics.start();
+    const report = createAnalyticsClient(async message => {
+      const event = eventFromMessage(message); if (event) return analytics.report(event);
+    });
+    const listeners = [];
+    let resolveTranslation;
+    let resolveAI;
+    editor.focus();
+    startNativeType({ platform: {
+      id:'x', replacementErrorMessage:'Replace failed', matches:() => true,
+      findEditor: target => target instanceof Element && (target === editor || editor.contains(target)) ? editor : null,
+      writingContext:() => 'post', getText:value => value.innerText,
+      previewLayout:value => ({ container:composer, before:value.nextSibling }),
+      observe(value, listener) {
+        const observer = new MutationObserver(() => value.isConnected ? listener.onEdit() : listener.onDetach());
+        observer.observe(composer, { childList:true, subtree:true, characterData:true });
+        return () => observer.disconnect();
+      },
+      async replaceText(value, source, translated, canReplace) {
+        if (!canReplace() || value.innerText !== source) return false;
+        value.textContent = translated; return true;
+      },
+    }, provider: {
+      prepare() {}, retainPair() {}, dispose() {}, downloadProgressText:() => '',
+      translate:() => new Promise(resolve => { resolveTranslation = resolve; }),
+    }, polish:() => new Promise(resolve => { resolveAI = resolve; }), analytics:report,
+    languagePair:{ source:'zh', target:'en' }, settings:store, host: {
+      listen(target, type, callback) { target.addEventListener(type, callback); listeners.push(() => target.removeEventListener(type, callback)); },
+      onInvalidated(callback) { close = callback; },
+    } });
+    await delay(50);
+    check(payloads.length === 0, 'empty focused composer sends no session');
+    input('這是私密原文'); await until(() => events('composer_session_started').length === 1 && host());
+    check(events('preview_shown').length === 0 && events('improve_with_ai_shown').length === 0, 'typing alone has no preview or AI exposure');
+    button('Enable translation').click(); await until(() => resolveTranslation);
+    host().style.visibility = 'hidden'; resolveTranslation('Private local translation');
+    await until(() => events('translation_success').length === 1);
+    check(events('preview_shown').length === 0, 'CSS-hidden local result is not exposed');
+    host().style.visibility = 'visible';
+    composer.style.marginTop = '1800px';
+    // Change its intersection after visibility restores, then scroll into view.
+    await delay(80);
+    check(events('preview_shown').length === 0, 'offscreen result is not exposed');
+    editor.scrollIntoView(); await until(() => events('preview_shown').length === 1 && events('improve_with_ai_shown').length === 1);
+    const local = events('preview_shown')[0];
+    check(local.source === 'local', 'visible local result and AI entry each emit once');
+    button('Improve with AI').click(); await until(() => resolveAI && events('improve_with_ai_clicked').length === 1);
+    check(events('improve_with_ai_clicked').length === 1, 'AI click is recorded before a response');
+    resolveAI({ text:'Private improved result', entity_warnings:false });
+    await until(() => events('ai_rewrite_success').length === 1);
+    const ai = events('preview_shown')[1];
+    check(ai.source === 'ai' && ai.previewId !== local.previewId && ai.sessionId === local.sessionId, 'AI candidate gets its own preview ID in the same session');
+    button('Local').click(); button('AI Improved').click(); await delay(80);
+    check(events('preview_shown').length === 2 && events('improve_with_ai_shown').length === 1, 'version switches do not duplicate exposure');
+    button('Replace').click(); await until(() => events('replace_success').length === 1);
+    check(editor.innerText === 'Private improved result' && events('replace_success')[0].source === 'ai', 'AI replace reports only after native text changes');
+    check(events('preview_dismissed').length === 0 && events('ai_improve_replaced').length === 0, 'replace does not create dismiss or duplicate legacy AI events');
+    input(''); input('下一份草稿'); await until(() => events('composer_session_started').length === 2);
+    check(events('composer_session_started')[0].sessionId !== events('composer_session_started')[1].sessionId, 'clearing then typing creates a fresh session');
+    const before = payloads.length; const next = await store.load(); next.analytics.enabled = false; await store.save(next);
+    input('停用統計後私密文字'); await delay(80);
+    check(payloads.length === before && installId === undefined, 'opt-out removes install ID and stops reports');
+    check(!/私密|Private|下一份|license|email|clerk|stripe|prompt/i.test(JSON.stringify(payloads)), 'transport payload contains no writing content or account data');
+    check(new Set(payloads.map(value => value.eventId)).size === payloads.length, 'every new event has a distinct ID');
+    close(); analytics.dispose(); listeners.forEach(stop => stop());
+    output.textContent += 'ALL PASSED';
+  } catch (error) { close?.(); output.textContent += `FAIL ${error.stack ?? error}`; }
+};
+</script>

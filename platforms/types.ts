@@ -4,9 +4,10 @@ export interface PlatformEditorListener {
 }
 
 export interface PreviewLayout {
+  /** Parent that should contain the inline preview in normal flow. */
   container: HTMLElement;
-  heightTarget?: HTMLElement;
-  placement?: 'above';
+  /** Insert the preview before this node. Null appends it to the container. */
+  before: Node | null;
 }
 
 export type WritingContext = 'post' | 'reply' | 'quote' | 'chat' | 'unknown';

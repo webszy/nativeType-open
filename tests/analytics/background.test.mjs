@@ -13,23 +13,26 @@ test('missing, disabled and invalid consent never generates an ID or sends reque
   }
 });
 
-test('opt-in creates one persistent UUID; 204 succeeds with the exact private contract', async t => {
+test('opt-in immediately registers one UUID and later usage shares the same identity', async t => {
   const fixture = harness(t);
   await fixture.service.start();
   await fixture.change(true);
   assert.equal(fixture.generated(), 1);
-  assert.equal(fixture.requests.length, 0);
+  assert.equal(fixture.requests.length, 1);
   const id = fixture.state.installId;
   assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.equal(await fixture.service.report('translation_success'), true);
   const { url, init, body } = fixture.requests[0];
   assert.equal(url, endpoint);
-  assert.deepEqual(body, { installId: id, event: 'translation_success' });
+  assert.deepEqual(body, { installId: id, event: 'analytics_enabled' });
   assert.equal(init.method, 'POST');
   assert.deepEqual(init.headers, { 'Content-Type': 'application/json' });
   assert.equal(init.referrerPolicy, 'no-referrer');
   assert.equal(init.credentials, 'omit');
   assert.equal(init.redirect, 'error');
+  assert.equal(await fixture.service.report('translation_success'), true);
+  assert.deepEqual(fixture.requests[1].body, { installId: id, event: 'translation_success' });
+  await fixture.change(true);
+  assert.equal(fixture.requests.length, 2);
 });
 
 test('concurrent events from multiple tabs share one ID, including service worker restart', async t => {
@@ -52,6 +55,48 @@ test('concurrent events from multiple tabs share one ID, including service worke
   t.after(() => restarted.dispose());
   await restarted.start();
   assert.equal(await restarted.report('replace_success'), true);
+});
+
+test('starting with saved consent sends no enable event; only a new opt-in reports', async t => {
+  const fixture = harness(t, { settings: settings(true) });
+  await fixture.service.start();
+  assert.equal(fixture.requests.length, 0);
+  await fixture.change(true);
+  assert.equal(fixture.requests.length, 0);
+  await fixture.change(false);
+  await fixture.change(true);
+  assert.deepEqual(fixture.requests.map(request => request.body), [
+    { installId: fixture.state.installId, event: 'analytics_enabled' },
+  ]);
+});
+
+test('disable cancels the opt-in request and removes its identity', async t => {
+  const fixture = harness(t, { fetch: waitForAbort });
+  await fixture.service.start();
+  await fixture.change(true);
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.requests[0].body.event, 'analytics_enabled');
+  await fixture.change(false);
+  assert.equal(fixture.requests[0].init.signal.aborted, true);
+  assert.equal(fixture.state.installId, undefined);
+});
+
+test('disable before queued opt-in identity initialization prevents the request', async t => {
+  const fixture = harness(t);
+  await fixture.service.start();
+  await Promise.all([fixture.change(true), fixture.change(false)]);
+  assert.equal(fixture.requests.length, 0);
+  assert.equal(fixture.state.installId, undefined);
+});
+
+test('failed opt-in reporting does not retry or block subsequent usage', async t => {
+  const fixture = harness(t, { fetch: async () => new Response(null, { status: 503 }) });
+  await fixture.service.start();
+  await fixture.change(true);
+  await fixture.change(true);
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(await fixture.service.report('translation_success'), false);
+  assert.equal(fixture.requests.length, 2);
 });
 
 test('disable aborts an in-flight report, removes the ID and re-enable creates a new one', async t => {
@@ -88,7 +133,9 @@ test('rapid disable and enable cannot reuse the old ID or race an in-flight ID w
   assert.equal(await reporting, false);
   await settle();
   assert.equal(fixture.generated(), 2);
-  assert.equal(fixture.requests.length, 0);
+  assert.deepEqual(fixture.requests.map(request => request.body), [
+    { installId: fixture.state.installId, event: 'analytics_enabled' },
+  ]);
   assert.equal(await fixture.service.report('replace_success'), true);
 });
 
@@ -179,4 +226,31 @@ test('missing configuration and unrecognized events send nothing', async t => {
   await unknown.service.start();
   assert.equal(await unknown.service.report('typing'), false);
   assert.equal(unknown.requests.length, 0);
+});
+
+test('modern reports retain event identity and context through the consent gate', async t => {
+  const fixture = harness(t, { settings: settings(true) });
+  await fixture.service.start();
+  const event = { event: 'replace_success', eventId: crypto.randomUUID(), sessionId: crypto.randomUUID(), previewId: crypto.randomUUID(), source: 'ai' };
+  assert.equal(await fixture.service.report(event), true);
+  assert.equal(await fixture.service.report(event), true);
+  assert.deepEqual(fixture.requests[0].body, { installId: fixture.state.installId, ...event });
+  assert.equal(fixture.requests[1].body.eventId, event.eventId);
+  assert.equal(await fixture.service.report({ ...event, prompt: 'private' }), false);
+  await fixture.change(false);
+  assert.equal(await fixture.service.report(event), false);
+  assert.equal(fixture.requests.length, 2);
+});
+
+
+test('queued modern reports cannot acquire extra fields after validation', async t => {
+  const fixture = harness(t, { settings: settings(true) });
+  await fixture.service.start();
+  const event = { event: 'composer_session_started', eventId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const reporting = fixture.service.report(event);
+  event.prompt = 'private draft';
+  event.sessionId = 'not-a-uuid';
+  assert.equal(await reporting, true);
+  assert.equal(fixture.requests[0].body.prompt, undefined);
+  assert.notEqual(fixture.requests[0].body.sessionId, event.sessionId);
 });

@@ -2,9 +2,12 @@ import { canonicalLanguage } from '../languages/catalog';
 import { defaultLanguagePair } from '../languages/config';
 import { platformContextConfig, type ContextSettings } from './config';
 
+export type TranslationMode = 'manual' | 'automatic';
+
 export interface NativeTypeSettings {
   schemaVersion: 1;
   translation: {
+    mode: TranslationMode;
     sourceLanguage: string;
     targetLanguage: string;
   };
@@ -28,6 +31,7 @@ export function getDefaultSettings(): NativeTypeSettings {
   return {
     schemaVersion: 1,
     translation: {
+      mode: 'automatic',
       sourceLanguage: defaultLanguagePair.source,
       targetLanguage: defaultLanguagePair.target,
     },
@@ -65,7 +69,11 @@ export function normalizeSettings(input: unknown): NativeTypeSettings {
   if (sourceLanguage === targetLanguage) targetLanguage = differentTarget(sourceLanguage);
   return {
     schemaVersion: 1,
-    translation: { sourceLanguage, targetLanguage },
+    translation: {
+      mode: translation.mode === 'manual' || translation.mode === 'automatic' ? translation.mode : defaults.translation.mode,
+      sourceLanguage,
+      targetLanguage,
+    },
     contexts: normalizeContexts(record.contexts),
     analytics: { enabled: record.schemaVersion === 1 && analytics.enabled === true },
   };
@@ -75,6 +83,7 @@ export function sameSettings(left: NativeTypeSettings, right: NativeTypeSettings
   const leftContexts: Record<string, Record<string, boolean>> = left.contexts;
   const rightContexts: Record<string, Record<string, boolean>> = right.contexts;
   return left.translation.sourceLanguage === right.translation.sourceLanguage
+    && left.translation.mode === right.translation.mode
     && left.translation.targetLanguage === right.translation.targetLanguage
     && left.analytics.enabled === right.analytics.enabled
     && Object.entries(platformContextConfig).every(([platform, config]) =>

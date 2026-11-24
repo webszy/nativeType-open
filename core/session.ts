@@ -1,14 +1,19 @@
 import type { PreviewState } from '../ui/overlay';
 
+export const AUTOMATIC_TRANSLATION_DEBOUNCE_MS = 900;
+
 export interface TranslationSession {
   editor: HTMLElement | null;
+  draftKey: string | undefined;
   revision: number;
   sourceText: string;
   preview: PreviewState | undefined;
   abort: AbortController | undefined;
   timer: ReturnType<typeof setTimeout> | undefined;
   composing: boolean;
+  compositionEvent: boolean;
   replacing: boolean;
+  requestMode: 'manual' | 'automatic' | undefined;
   languagePair: { source: string; target: string } | undefined;
   cached: { source: string; translation: string; sourceLanguage: string; targetLanguage: string } | undefined;
   stopObserving: (() => void) | undefined;
@@ -26,13 +31,16 @@ export interface RequestSnapshot {
 export function createSession(): TranslationSession {
   return {
     editor: null,
+    draftKey: undefined,
     revision: 0,
     sourceText: '',
     preview: undefined,
     abort: undefined,
     timer: undefined,
     composing: false,
+    compositionEvent: false,
     replacing: false,
+    requestMode: undefined,
     languagePair: undefined,
     cached: undefined,
     stopObserving: undefined,
@@ -44,6 +52,7 @@ export function cancelSession(session: TranslationSession): void {
   session.timer = undefined;
   session.abort?.abort();
   session.abort = undefined;
+  session.requestMode = undefined;
   session.revision++;
 }
 

@@ -1,6 +1,6 @@
 // Public hosts that must not receive development reports. They are not credentials.
 // api.typewith.si is not a Worker route. It stays blocked so local builds cannot target the old host.
-const productionHosts = new Set(['typewith.si', 'api.typewith.si', 'nativetype-api.cycceme.workers.dev']);
+const productionHosts = new Set(['nativetype.here', 'typewith.si', 'api.typewith.si', 'nativetype-api.cycceme.workers.dev']);
 
 export function analyticsEndpoint(value: unknown, mode: string): string | undefined {
   if (typeof value !== 'string' || !value || value !== value.trim()) return undefined;

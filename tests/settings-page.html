@@ -9,8 +9,15 @@
   <body>
     <main id="settings"></main>
     <script type="module">
+      import { mountPlusPanel } from '../license/page.ts';
+      import { createLicenseService } from '../license/service.ts';
+      import { createLicenseStore, createMemoryLicenseBackend } from '../license/store.ts';
       import { mountSettingsPage } from '../settings/page.ts';
       import { createMemoryBackend, createSettingsStore } from '../settings/store.ts';
+
+      const licenseBackend = createMemoryLicenseBackend();
+      const licenseStore = createLicenseStore(licenseBackend);
+      window.__licenseBackend = licenseBackend;
 
       async function boot(initial, failLoad = false) {
         const backend = createMemoryBackend(initial);
@@ -29,7 +36,10 @@
         window.__settingsStore = store;
         const root = document.querySelector('#settings');
         root.replaceChildren();
+        window.__settingsReady = false;
         await mountSettingsPage(root, store, '/icon/128.png');
+        const plus = root.querySelector('#settings-plus');
+        await mountPlusPanel(plus, { service: await createLicenseService(), store: licenseStore });
         window.__settingsReady = true;
       }
 

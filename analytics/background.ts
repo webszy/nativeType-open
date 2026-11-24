@@ -1,4 +1,4 @@
-import { isAnalyticsEventType, type AnalyticsEventRequest, type AnalyticsEventType } from '@nativetype/contracts';
+import { isAnalyticsEventPayload, type AnalyticsEventRequest, type AnalyticsEventPayload, type AnalyticsEventType } from '@nativetype/contracts';
 import { normalizeSettings } from '../settings/store';
 
 export const ANALYTICS_INSTALL_ID_KEY = 'analytics.installId';
@@ -72,21 +72,25 @@ export function createAnalyticsService(options: {
     return installId;
   }
 
-  return {
+  const service = {
     async start(): Promise<void> {
       if (disposed || unwatch) return;
       try {
         unwatch = storage.watchSettings((value, previous) => {
-          const token = ++epoch;
           const enabled = normalizeSettings(value).analytics.enabled;
+          const previouslyEnabled = normalizeSettings(previous).analytics.enabled;
+          // Saving another setting is not a new consent decision.
+          if (enabled && previouslyEnabled) return;
+          ++epoch;
           if (!enabled) {
             needsNewId = true;
             abortRequests();
             // Do not skip this removal if the user immediately enables again.
             void serialize(() => storage.removeInstallId()).catch(abortRequests);
           } else {
-            if (!normalizeSettings(previous).analytics.enabled) needsNewId = true;
-            void serialize(() => identity(token)).catch(abortRequests);
+            needsNewId = true;
+            // Re-read persisted consent and share the normal cancellation/timeout path.
+            void service.report('analytics_enabled');
           }
         });
         watching = true;
@@ -95,8 +99,9 @@ export function createAnalyticsService(options: {
         abortRequests();
       }
     },
-    async report(event: AnalyticsEventType): Promise<boolean> {
-      if (disposed || !watching || !endpoint || !isAnalyticsEventType(event) || pendingReports >= MAX_PENDING_REPORTS) return false;
+    async report(event: AnalyticsEventType | AnalyticsEventPayload): Promise<boolean> {
+      const payload = typeof event === 'string' ? { event } : { ...event };
+      if (disposed || !watching || !endpoint || !isAnalyticsEventPayload(payload) || pendingReports >= MAX_PENDING_REPORTS) return false;
       const token = epoch;
       pendingReports += 1;
       try {
@@ -106,7 +111,7 @@ export function createAnalyticsService(options: {
         active.add(controller);
         const timer = setTimeout(() => controller.abort(), ANALYTICS_TIMEOUT_MS);
         try {
-          const body: AnalyticsEventRequest = { installId, event };
+          const body: AnalyticsEventRequest = { installId, ...payload };
           const response = await fetchEvent(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -138,4 +143,5 @@ export function createAnalyticsService(options: {
       abortRequests();
     },
   };
+  return service;
 }

@@ -23,7 +23,7 @@ test('analytics endpoints preserve the base path with or without a trailing slas
 
 test('development and tests reject known production hosts and have no fallback', () => {
   for (const mode of ['development', 'test']) {
-    for (const host of ['typewith.si', 'TYPEWITH.SI', 'typewith.si.', 'api.typewith.si', 'api.typewith.si.', 'nativetype-api.cycceme.workers.dev']) {
+    for (const host of ['nativetype.here', 'typewith.si', 'TYPEWITH.SI', 'typewith.si.', 'api.typewith.si', 'api.typewith.si.', 'nativetype-api.cycceme.workers.dev']) {
       for (const path of ['', '/api', '/api/']) {
         assert.equal(analyticsEndpoint(`https://${host}${path}`, mode), undefined);
       }
@@ -41,6 +41,6 @@ test('development and tests reject known production hosts and have no fallback',
 test('production environment resolves to the website API endpoint', async () => {
   const env = await readFile(new URL('../../.env.production', import.meta.url), 'utf8');
   const base = env.match(/^WXT_ANALYTICS_API_BASE_URL=(.+)$/m)?.[1];
-  assert.equal(base, 'https://typewith.si/api');
-  assert.equal(analyticsEndpoint(base, 'production'), 'https://typewith.si/api/v1/events');
+  assert.equal(base, 'https://nativetype.here/api');
+  assert.equal(analyticsEndpoint(base, 'production'), 'https://nativetype.here/api/v1/events');
 });

@@ -34,8 +34,15 @@ const { defaultLanguagePair } = await import('../languages/config.ts');
 const { xPlatform } = await import('../platforms/x.ts');
 const { getTranslationProvider } = await import('../translators/registry.ts');
 const { createMemoryBackend, createSettingsStore, getDefaultSettings } = await import('../settings/store.ts');
-const settingsBackend = createMemoryBackend();
+const automaticSettings = () => { const settings = getDefaultSettings(); settings.translation.mode = 'automatic'; return settings; };
+const settingsBackend = createMemoryBackend(automaticSettings());
 const settingsStore = createSettingsStore(settingsBackend);
+let badge = 'unknown';
+const entitlementListeners = new Set();
+const notifyEntitlement = value => {
+  badge = value;
+  for (const listener of entitlementListeners) listener(value);
+};
 let detectorBehavior = async () => { throw new Error('Language detection should not run for the default Chinese trigger'); };
 const detector = {
   detectionProgressText: progress => `Downloading language detection… ${progress}%`,
@@ -50,6 +57,14 @@ startNativeType({
   provider: getTranslationProvider('chrome'),
   languagePair: defaultLanguagePair,
   settings: settingsStore,
+  logoUrl: '/icon/128.png',
+  entitlement: {
+    async load() { return badge; },
+    subscribe(listener) {
+      entitlementListeners.add(listener);
+      return () => entitlementListeners.delete(listener);
+    },
+  },
   detector,
   host: {
     listen: (target, type, listener) => target.addEventListener(type, listener, { signal: invalidation.signal }),
@@ -82,8 +97,12 @@ for (const editor of [first, second]) editor.addEventListener('paste', event => 
   document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
 });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const root = () => document.querySelector('[data-nativetype]').shadowRoot;
-const shown = () => getComputedStyle(document.querySelector('[data-nativetype]')).display !== 'none';
+const hostOf = () => document.querySelector('[data-nativetype]');
+const root = () => hostOf().shadowRoot;
+const shown = () => {
+  const host = hostOf();
+  return !!host && getComputedStyle(host).display !== 'none';
+};
 const preview = () => root().querySelector('p').textContent;
 const button = text => [...root().querySelectorAll('button')].find(el => el.textContent === text);
 const input = (el, text) => { el.focus(); el.textContent = text; el.dispatchEvent(new InputEvent('input', { bubbles: true })); };
@@ -99,7 +118,8 @@ document.querySelector('#run').addEventListener('click', async () => {
     const firstMinHeightPriority = first.style.getPropertyPriority('min-height');
     const languageOverlay = createOverlay(() => {}, () => {}, () => ({ container: document.body }), { source: 'zh', target: 'ja' });
     languageOverlay.show(first, { kind: 'translated', text: 'こんにちは' });
-    assert(languageOverlay.host.shadowRoot.querySelector('header').textContent === 'NativeType · Chinese → Japanese'
+    assert(languageOverlay.host.shadowRoot.querySelector('[data-part="name"]').textContent === 'NativeType'
+      && languageOverlay.host.shadowRoot.querySelector('[data-part="language"]').textContent === 'Japanese'
       && languageOverlay.host.shadowRoot.querySelector('p').lang === 'ja', 'Overlay label and text language follow the supplied language pair');
     languageOverlay.destroy();
     input(first, 'Hello'); await sleep(1100);
@@ -110,6 +130,21 @@ document.querySelector('#run').addEventListener('click', async () => {
     assert(shown() && button('Enable translation'), 'First use requests activation');
     button('Enable translation').click(); await sleep(80);
     assert(calls.length === 1 && shown() && button('Replace') && creates === 1, 'Translation preview appears');
+    assert(first.nextElementSibling === hostOf() && hostOf().parentElement === first.parentElement, 'Home preview follows the draft in normal flow');
+    assert(getComputedStyle(hostOf()).position === 'static' && !hostOf().hasAttribute('popover'), 'Preview is not a floating card');
+    assert(!root().querySelector('[contenteditable]'), 'Preview does not add another editor');
+    assert(root().querySelector('[data-part="name"]').textContent === 'NativeType', 'Brand name is NativeType');
+    const logo = root().querySelector('[data-part="logo"]');
+    assert(logo && !logo.hidden && logo.getAttribute('src') === '/icon/128.png' && !logo.previousElementSibling, 'Existing logo leads the brand row');
+    assert(logo.getBoundingClientRect().width >= 20 && logo.getBoundingClientRect().width <= 24, 'Logo stays near 22px');
+    assert(root().querySelector('[data-part="language"]').textContent === 'English', 'Target language is the active pair');
+    assert(root().querySelector('[data-part="plan"]').hidden, 'Unconfirmed entitlement does not claim Free');
+    notifyEntitlement('plus');
+    assert(!root().querySelector('[data-part="plan"]').hidden && root().querySelector('[data-part="plan"]').textContent === 'Plus', 'Active Plus entitlement shows Plus');
+    notifyEntitlement('free');
+    assert(root().querySelector('[data-part="plan"]').textContent === 'Free' && root().querySelector('[data-part="plan"]').dataset.plan === 'free', 'Confirmed non-Plus entitlement shows Free');
+    notifyEntitlement('unknown');
+    assert(root().querySelector('[data-part="plan"]').hidden, 'A later unknown entitlement hides the badge');
     first.dispatchEvent(new InputEvent('input', { bubbles: true })); await sleep(1100);
     assert(calls.length === 1, 'Unchanged input is deduplicated');
     button('Retry').click(); await sleep(80);
@@ -118,7 +153,7 @@ document.querySelector('#run').addEventListener('click', async () => {
     delay = 120;
     button('Retry').click(); await sleep(20);
     root().querySelector('button[aria-label="Close translation preview"]').click(); await sleep(180);
-    assert(!shown() && !document.querySelector('[data-nativetype]').matches(':popover-open') && first.innerText === draftBeforeClose, 'Close preserves the draft and pending translation cannot reopen the preview');
+    assert(!shown() && !hostOf() && first.innerText === draftBeforeClose, 'Close preserves the draft and pending translation cannot reopen the preview');
     assert(first.style.getPropertyValue('min-height') === firstMinHeight && first.style.getPropertyPriority('min-height') === firstMinHeightPriority, 'Close restores the input height and original style priority');
     delay = 15;
     input(first, '你好世界！'); await sleep(1100);
@@ -148,51 +183,50 @@ document.querySelector('#run').addEventListener('click', async () => {
     const heightTarget = second.parentElement;
     const originalMinHeight = heightTarget.style.getPropertyValue('min-height');
     const originalMinHeightPriority = heightTarget.style.getPropertyPriority('min-height');
-    const dialogHeightBefore = second.closest('[role="dialog"]').getBoundingClientRect().height;
-    const toolbarTopBefore = document.querySelector('[aria-label="Reply actions"]').getBoundingClientRect().top - second.closest('[role="dialog"]').getBoundingClientRect().top;
-    input(second, '回复'); await sleep(1100);
+    const dialog = second.closest('[role="dialog"]');
+    const toolbar = document.querySelector('[aria-label="Reply actions"]');
+    input(second, '回复');
+    await sleep(40);
+    const containerBeforePreview = heightTarget.getBoundingClientRect().height;
+    const dialogBeforePreview = dialog.getBoundingClientRect().height;
+    const toolbarBeforePreview = toolbar.getBoundingClientRect().top;
+    await sleep(1100);
     assert(first.style.getPropertyValue('min-height') === firstMinHeight, 'Switching composers restores the previous input height');
-    assert(document.querySelector('[data-nativetype]').parentElement.getAttribute('role') === 'dialog', 'Preview stays inside modal focus boundary');
-    const host = document.querySelector('[data-nativetype]');
+    const host = hostOf();
+    assert(host.parentElement === heightTarget && second.nextElementSibling === host, 'Reply preview follows the draft inside the input container');
+    assert(heightTarget.nextElementSibling === toolbar && host.closest('[role="dialog"]') === dialog, 'Preview stays above the native toolbar and inside the dialog');
     const previewRect = host.getBoundingClientRect();
-    const textRange = document.createRange();
-    textRange.selectNodeContents(second.firstChild);
-    const textRects = [...textRange.getClientRects()];
-    const firstLine = textRects[0];
-    const textBottom = Math.max(...textRects.map(rect => rect.bottom));
-    const expectedLeft = Math.max(8, Math.min(firstLine.left + parseFloat(getComputedStyle(second).fontSize) * 2, innerWidth - previewRect.width - 8));
-    assert(Math.abs(previewRect.left - expectedLeft) < 1 && Math.abs(previewRect.top - textBottom - 4) < 1, 'Floating preview stays four pixels below the text with a two-character indent');
-    assert(getComputedStyle(root().querySelector('section')).backgroundColor === 'rgb(20, 20, 20)', 'Transparent white composer inherits the dark dialog theme');
-    const dialogRect = second.closest('[role="dialog"]').getBoundingClientRect();
-    assert(host.matches(':popover-open') && getComputedStyle(host).position === 'fixed', 'Preview floats in the top layer outside dialog clipping');
-    assert(dialogRect.height > dialogHeightBefore && document.querySelector('[aria-label="Reply actions"]').getBoundingClientRect().top - dialogRect.top > toolbarTopBefore && previewRect.bottom + 11 <= heightTarget.getBoundingClientRect().bottom, 'Preview expands the input area and moves the toolbar below the card');
-    const singleLineHeight = heightTarget.getBoundingClientRect().height;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const ruleRect = root().querySelector('[data-part="rule"]').getBoundingClientRect();
+    assert(getComputedStyle(host).position === 'static' && !host.hasAttribute('popover'), 'Reply preview stays in normal flow');
+    assert(getComputedStyle(root().querySelector('section')).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(root().querySelector('section')).boxShadow === 'none', 'Preview has no card background or shadow');
+    assert(getComputedStyle(root().querySelector('[data-part="result"]')).color === 'rgb(231, 233, 234)', 'Transparent white composer inherits the dark dialog theme');
+    assert(previewRect.bottom <= toolbarRect.top + 1, 'Preview does not cover the reply toolbar');
+    assert(dialog.getBoundingClientRect().height > dialogBeforePreview && toolbar.getBoundingClientRect().top > toolbarBeforePreview && heightTarget.getBoundingClientRect().height > containerBeforePreview, 'Composer grows with the inline preview and the toolbar moves below it');
+    assert(Math.abs(ruleRect.height - 1) < 0.6 && Math.abs(ruleRect.width - previewRect.width * 0.9) < 2, 'Divider is a 1px line at 90% width');
+    assert(Math.abs((ruleRect.left + ruleRect.right) / 2 - (previewRect.left + previewRect.right) / 2) < 2, 'Divider is centered');
     const callsBeforeLineBreak = calls.length;
     input(second, '回复\n第二行\n第三行'); await sleep(80);
-    textRange.selectNodeContents(second.firstChild);
-    const multilineBottom = Math.max(...[...textRange.getClientRects()].map(rect => rect.bottom));
-    assert(shown() && Math.abs(host.getBoundingClientRect().top - multilineBottom - 4) < 1 && calls.length === callsBeforeLineBreak && button('Replace').hidden, 'Line breaks move the pending preview immediately without waiting for translation or offering stale replacement');
+    assert(shown() && second.nextElementSibling === host && heightTarget.nextElementSibling === toolbar && calls.length === callsBeforeLineBreak && button('Replace').hidden, 'Line breaks keep the inline preview in place without waiting for translation or offering stale replacement');
     await sleep(1100);
-    assert(host.getBoundingClientRect().bottom + 11 <= heightTarget.getBoundingClientRect().bottom && heightTarget.getBoundingClientRect().height > singleLineHeight, 'Multiple text lines and the preview fit inside the expanded input area');
+    assert(host.getBoundingClientRect().bottom <= toolbar.getBoundingClientRect().top + 1 && heightTarget.getBoundingClientRect().height > containerBeforePreview, 'Multiple text lines and the preview stay above the toolbar');
     input(second, '自动换行文字'.repeat(30)); await sleep(80);
-    textRange.selectNodeContents(second.firstChild);
-    const wrappedLines = [...textRange.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
-    assert(wrappedLines.length > 1 && Math.abs(host.getBoundingClientRect().top - Math.max(...wrappedLines.map(rect => rect.bottom)) - 4) < 1, 'Automatic wrapping also keeps the preview below the last rendered line');
+    assert(shown() && second.nextElementSibling === host && heightTarget.nextElementSibling === toolbar, 'Wrapped text keeps the preview below the draft and above the toolbar');
     input(second, '回复\n第二行\n第三行'); await sleep(1100);
     button('Replace').click(); await sleep(150);
     assert(first.innerText === '新' && second.innerText.startsWith('English:'), 'Only the active composer is replaced');
-    assert(!host.matches(':popover-open') && second.parentElement.style.marginBottom === '0px' && second.style.marginBottom === '0px', 'Hiding preview restores the original container spacing');
+    assert(!host.isConnected && second.parentElement.style.marginBottom === '0px' && second.style.marginBottom === '0px', 'Hiding preview restores the original container spacing');
     assert(heightTarget.style.getPropertyValue('min-height') === originalMinHeight && heightTarget.style.getPropertyPriority('min-height') === originalMinHeightPriority, 'Replace restores the input height and original style priority');
     const beforeReplyDisable = calls.length;
     const replyDraft = second.innerText;
-    await settingsStore.save({ ...getDefaultSettings(), contexts: { x: { post: true, reply: false, quote: true } } });
+    await settingsStore.save({ ...automaticSettings(), contexts: { x: { post: true, reply: false, quote: true } } });
     await sleep(40);
     assert(!shown() && second.innerText === replyDraft, 'Disabling replies clears that preview and keeps the draft');
     input(second, '回复已关闭'); await sleep(1100);
     assert(calls.length === beforeReplyDisable && second.innerText === '回复已关闭', 'A disabled reply does not translate or rewrite the draft');
     input(first, '帖子仍可用'); await sleep(1100);
     assert(calls.length === beforeReplyDisable + 1 && shown(), 'Disabling replies leaves new posts enabled');
-    await settingsStore.save(getDefaultSettings());
+    await settingsStore.save(automaticSettings());
     first.blur();
     await sleep(40);
     const inactiveCalls = calls.length;
@@ -224,14 +258,14 @@ document.querySelector('#run').addEventListener('click', async () => {
     input(quote, '引用'); await sleep(1100);
     assert(calls.length === quoteCalls + 1 && shown() && preview().includes('word'), 'Quote composer is recognized by the X selector');
     const quoteDraft = quote.innerText;
-    await settingsStore.save({ ...getDefaultSettings(), contexts: { x: { post: true, reply: true, quote: false } } });
+    await settingsStore.save({ ...automaticSettings(), contexts: { x: { post: true, reply: true, quote: false } } });
     await sleep(40);
     assert(!shown() && quote.innerText === quoteDraft, 'Disabling quotes removes the preview and keeps the draft');
     input(quote, '引用已关闭'); await sleep(1100);
     assert(calls.length === quoteCalls + 1, 'A disabled quote does not translate');
     input(first, '帖子不受引用开关影响'); await sleep(1100);
     assert(calls.length === quoteCalls + 2, 'Disabling quotes leaves new posts enabled');
-    await settingsStore.save(getDefaultSettings());
+    await settingsStore.save(automaticSettings());
     input(quote, '引用恢复'); await sleep(1100);
     assert(calls.length === quoteCalls + 3 && shown(), 'Turning quotes back on translates again');
     quoteDialog.remove(); await sleep(80);
@@ -302,7 +336,7 @@ document.querySelector('#run').addEventListener('click', async () => {
     column.remove(); replyToQuote.remove(); ambiguous.remove(); menuDialog.remove();
     delay = 500;
     input(first, '旧语言结果'); await sleep(1100);
-    await settingsStore.save({ ...getDefaultSettings(), translation: { sourceLanguage: 'en', targetLanguage: 'zh' } });
+    await settingsStore.save({ ...automaticSettings(), translation: { mode: 'automatic', sourceLanguage: 'en', targetLanguage: 'zh' } });
     detectorBehavior = async (text, source) => (source === 'en' && /\p{Script=Han}/u.test(text) ? { status: 'skip' } : { status: 'match' });
     await sleep(700);
     assert(!shown() || !preview().includes('English:'), 'A stale translation cannot replace the new language pair');
@@ -325,7 +359,7 @@ document.querySelector('#run').addEventListener('click', async () => {
     assert(button('Enable translation'), 'Detection download waits for Enable translation');
     button('Enable translation').click(); await sleep(80);
     assert(shown() && button('Replace'), 'Enabled detection continues into translation');
-    await settingsStore.save(getDefaultSettings());
+    await settingsStore.save(automaticSettings());
     delay = 15;
     const beforeInvalidate = calls.length;
     invalidate();

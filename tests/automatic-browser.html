@@ -1,0 +1,145 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NativeType translation modes regression</title>
+<style>
+  body { font: 16px system-ui; margin: 24px; }
+  [contenteditable], textarea { min-height: 60px; width: 420px; white-space: pre-wrap; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Translation Mode regression</h1>
+<p>Real browser DOM events on simulated X composers; translation is mocked. Nothing is published.</p>
+<button id="run">Run mode tests</button>
+<pre id="results">Ready</pre>
+<div id="settings"></div>
+<script type="module">
+import { startNativeType } from '../core/controller.ts';
+import { xPlatform } from '../platforms/x.ts';
+import { createMemoryBackend, createSettingsStore, getDefaultSettings } from '../settings/store.ts';
+import { mountSettingsPage } from '../settings/page.ts';
+import { attachedPost, chatComposer } from './platforms/x-fixture.mjs';
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const results = document.querySelector('#results');
+const assert = (ok, description) => { if (!ok) throw new Error(description); results.textContent += `\nPASS ${description}`; };
+const originalPath = location.pathname;
+const settings = createSettingsStore(createMemoryBackend());
+const invalidation = new AbortController();
+const calls = [];
+let aiCalls = 0, replacements = 0, sends = 0;
+let behavior = async (text, request) => `${request.target}: ${text}`;
+startNativeType({
+  platform: { ...xPlatform, replaceText(...args) { replacements++; return xPlatform.replaceText(...args); } },
+  provider: {
+    prepare() {}, retainPair() {}, dispose() {}, downloadProgressText: value => `${value}%`,
+    translate(text, request) { calls.push({ text, request }); return behavior(text, request); },
+  },
+  languagePair: { source: 'zh', target: 'en' }, settings,
+  polish: async () => { aiCalls++; throw new Error('Automatic must not call AI'); },
+  host: {
+    listen: (target, type, listener) => target.addEventListener(type, listener, { signal: invalidation.signal }),
+    onInvalidated: listener => invalidation.signal.addEventListener('abort', listener),
+  },
+});
+await mountSettingsPage(document.querySelector('#settings'), settings, '/icon/128.png');
+const mode = async value => { const next = await settings.load(); next.translation.mode = value; await settings.save(next); };
+const input = (editor, text, isComposing = false) => {
+  editor.focus();
+  if (editor instanceof HTMLTextAreaElement) editor.value = text;
+  else editor.textContent = text;
+  editor.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, isComposing }));
+};
+const preview = editor => editor.parentElement.querySelector('[data-nativetype]');
+const message = editor => preview(editor)?.shadowRoot.querySelector('[data-part="result"]').textContent;
+const button = (editor, label) => [...preview(editor).shadowRoot.querySelectorAll('button')].find(node => node.textContent === label);
+function mount(context) {
+  if (context === 'chat') {
+    history.replaceState(null, '', '/i/chat/100-200');
+    const chat = chatComposer(document, { text: '' });
+    chat.form.addEventListener('submit', event => { event.preventDefault(); sends++; });
+    return { shell: chat.host, editor: chat.editor };
+  }
+  history.replaceState(null, '', '/home');
+  const shell = document.createElement('div');
+  if (context !== 'post') shell.setAttribute('role', 'dialog');
+  if (context === 'reply') {
+    const article = document.createElement('article'); article.dataset.testid = 'tweet'; shell.append(article);
+  }
+  const column = document.createElement('div');
+  const editor = document.createElement('div'); editor.contentEditable = 'true'; editor.setAttribute('role', 'textbox');
+  editor.dataset.testid = 'tweetTextarea_0'; column.append(editor); shell.append(column);
+  if (context === 'quote') column.append(attachedPost(document).attachment);
+  document.body.append(shell);
+  return { shell, editor };
+}
+document.querySelector('#run').addEventListener('click', async () => {
+  results.textContent = 'Running';
+  const mounted = [];
+  try {
+    assert(document.querySelector('#translation-mode-automatic').checked, 'Settings defaults to Automatic');
+    document.querySelector('#translation-mode-manual').click(); await sleep(20);
+    assert((await settings.load()).translation.mode === 'manual', 'Settings radio immediately persists Manual');
+    document.querySelector('#translation-mode-automatic').click(); await sleep(20);
+    assert((await settings.load()).translation.mode === 'automatic', 'Settings radio immediately persists Automatic');
+    assert((await createSettingsStore(createMemoryBackend(await settings.load())).load()).translation.mode === 'automatic', 'Reopened settings storage retains the selected mode');
+    for (const context of ['post', 'reply', 'quote', 'chat']) {
+      await mode('manual');
+      const { shell, editor } = mount(context); mounted.push(shell);
+      const initial = calls.length;
+      input(editor, '最初的中文草稿'); await sleep(1000);
+      assert(xPlatform.writingContext(editor) === context, `${context}: correct composer context`);
+      assert(calls.length === initial, `${context}: Manual input never calls the provider`);
+      button(editor, 'Enable translation').click(); await sleep(40);
+      assert(calls.length === initial + 1 && calls.at(-1).request.activated, `${context}: existing activation starts a manual translation`);
+      await mode('automatic');
+      input(editor, '新的中文输入'); await sleep(400);
+      input(editor, '新的中文输入继续'); await sleep(700);
+      assert(calls.length === initial + 1, `${context}: continued input resets debounce`);
+      await sleep(240);
+      assert(calls.length === initial + 2 && !calls.at(-1).request.activated, `${context}: Automatic produces the current local candidate`);
+      const rect = editor.getBoundingClientRect();
+      assert(preview(editor).getBoundingClientRect().top >= rect.bottom - 1, `${context}: existing preview stays after the editor`);
+      assert(xPlatform.getText(editor) === '新的中文输入继续' && replacements === 0 && sends === 0 && aiCalls === 0, `${context}: candidate never replaces, sends or calls AI`);
+      editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, composed: true }));
+      input(editor, '输入法候选内容', true); await sleep(1000);
+      assert(calls.length === initial + 2 && !preview(editor), `${context}: composition hides stale results and makes no request`);
+      editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, composed: true, data: '内容' }));
+      editor.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, isComposing: false }));
+      await sleep(940);
+      assert(calls.length === initial + 3 && message(editor) === 'en: 输入法候选内容', `${context}: composition commit translates exactly once`);
+      editor.append(document.createTextNode(''));
+      editor.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true })); await sleep(940);
+      assert(calls.length === initial + 3, `${context}: duplicate input and DOM mutation do not translate again`);
+      await mode('manual');
+      assert(message(editor) === 'en: 输入法候选内容', `${context}: switching to Manual preserves the current result`);
+      input(editor, '切换到自动之前的草稿');
+      await mode('automatic'); await sleep(940);
+      assert(calls.length === initial + 4, `${context}: enabling Automatic processes the current draft`);
+      input(editor, ''); await sleep(940);
+      assert(calls.length === initial + 4 && !preview(editor), `${context}: empty input does not translate`);
+      shell.remove(); await sleep(30);
+    }
+    const { shell, editor } = mount('post'); mounted.push(shell);
+    const pending = [];
+    behavior = (text, request) => new Promise(resolve => pending.push({ text, request, resolve }));
+    input(editor, '旧任务内容'); await sleep(940);
+    input(editor, '新任务内容');
+    assert(pending[0].request.signal.aborted, 'Actual input aborts the old request immediately');
+    await sleep(940);
+    pending[1].resolve('New result'); await sleep(20); pending[0].resolve('Old result'); await sleep(20);
+    assert(message(editor) === 'New result', 'An old response arriving after the new response cannot replace Preview');
+    input(editor, '等待取消的任务'); await sleep(940);
+    await mode('manual'); pending[2].resolve('Cancelled automatic result'); await sleep(20);
+    assert(message(editor) !== 'Cancelled automatic result', 'Switching to Manual rejects an in-flight automatic response');
+    await mode('automatic'); await sleep(940);
+    shell.remove(); await sleep(30); pending[3].resolve('Detached result'); await sleep(20);
+    assert(!document.querySelector('[data-nativetype]'), 'Detached composers cannot remount Preview from late results');
+    assert(aiCalls === 0 && replacements === 0 && sends === 0, 'All automatic paths retain original-text control and stay local');
+    results.textContent += '\nALL PASSED';
+  } catch (error) {
+    results.textContent += `\nFAIL ${error.stack}`;
+  } finally {
+    invalidation.abort();
+    for (const shell of mounted) shell.remove();
+    history.replaceState(null, '', originalPath);
+  }
+});
+</script>

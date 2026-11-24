@@ -1,6 +1,6 @@
 # nativeType-open
 
-从 NativeType 提取的独立 Chrome 扩展项目，版本为 `0.0.5`。
+从 NativeType 提取的独立 Chrome 扩展项目，版本为 `0.1.1`。
 
 在 X 的发帖、回复、引用和私信输入框中，使用 Chrome 内置 Translator API 翻译当前草稿，展示预览，并在点击 Replace 后替换原文。语言和启用场景可在扩展设置中调整。
 
@@ -14,8 +14,10 @@ translators/          Chrome Translator API
 languages/            语言配置与检测
 settings/             设置与本地存储
 analytics/            可选使用统计
+ai/                   AI Rewrite 请求与响应处理
+license/              Plus 许可证验证与状态管理
 ui/                   翻译浮层
-packages/contracts/   扩展使用的本地事件协议包
+packages/contracts/   统计事件、AI Rewrite 与许可证的共享协议
 tests/                测试与浏览器页面夹具
 scripts/              商店截图脚本
 store-assets/         隐私说明与商店截图
@@ -28,7 +30,7 @@ store-assets/         隐私说明与商店截图
 包管理器配置为 `pnpm 12.15.0`，Node.js 版本范围沿用 `>=20.19`。安装扩展需要桌面 Chrome 138 或更高版本。
 
 ```sh
-cd /Users/apple/Desktop/Project/nativeType-open
+cd nativeType-open
 pnpm install
 pnpm dev
 ```
@@ -52,14 +54,14 @@ pnpm build
 3. 在设置中切换语言和启用场景，分别检查发帖、回复、引用和私信输入框。
 4. 检查统计开关默认关闭，关闭时翻译和替换仍正常。
 
-`pnpm zip` 生成 `dist/nativetype-0.0.5-chrome.zip`。`pnpm screenshot:store` 使用原有截图流程，会先构建扩展并启动 Chrome。
+`pnpm zip` 生成 `dist/nativetype-0.1.1-chrome.zip`。`pnpm screenshot:store` 使用原有截图流程，会先构建扩展并启动 Chrome。
 
-## 统计配置
+## API 配置
 
-生产配置沿用 `.env.production` 中的公开 API 地址 `https://typewith.si/api`，可选统计在用户启用后向该 API 发送事件。
+生产配置位于 `.env.production`。统计和许可证验证默认使用 `https://nativetype.here/api`。Plus 用户手动使用 AI Rewrite 时，扩展向 `WXT_POLISH_API_URL` 指定的完整地址发送请求，默认是 `https://nativetype.here/api/v1/polish`。修改后重新构建插件即可生效。
 
 开发环境可将 `.env.development.example` 复制为 `.env.development.local`，配置独立的 HTTPS 测试 API。开发模式缺少有效配置时关闭统计上报。
 
 ## 许可证
 
-沿用项目中的 MIT 许可证，见 `LICENSE`。
+沿用项目中的 MIT 许可证，见 `LICENSE.md`。

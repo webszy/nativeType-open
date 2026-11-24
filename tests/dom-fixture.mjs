@@ -31,7 +31,23 @@ export function installDOM(t) {
     }
     get isConnected() { return this === document.documentElement || !!(this.parentElement ?? this.shadowHost)?.isConnected; }
     get options() { return this.children; }
+    get parentNode() { return this.parentElement; }
     get previousElementSibling() { return this.parentElement?.children[this.parentElement.children.indexOf(this) - 1] ?? null; }
+    get nextSibling() {
+      const siblings = this.parentElement?.children;
+      if (!siblings) return null;
+      const index = siblings.indexOf(this);
+      return index >= 0 ? siblings[index + 1] ?? null : null;
+    }
+    get nextElementSibling() { return this.nextSibling; }
+    insertBefore(node, before) {
+      if (before != null && before.parentElement !== this) throw new Error('Node is not a child');
+      node.remove();
+      const index = before ? this.children.indexOf(before) : this.children.length;
+      this.children.splice(index, 0, node);
+      node.parentElement = this;
+      return node;
+    }
     get textContent() { return (this.text ?? '') + this.children.map(child => child.textContent).join(''); }
     set textContent(text) { this.replaceChildren(); this.text = text; }
     get innerText() { return this.textContent; }
@@ -53,6 +69,7 @@ export function installDOM(t) {
       this.append(...nodes);
     }
     setAttribute(name, value) { this.attributes.set(name, value); }
+    removeAttribute(name) { this.attributes.delete(name); }
     hasAttribute(name) { return this.getAttribute(name) != null; }
     getAttribute(name) {
       if (name.startsWith('data-')) return this.attributes.get(name) ?? this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())];

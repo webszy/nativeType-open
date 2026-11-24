@@ -217,16 +217,34 @@ function draftKey(editor: HTMLElement): string | undefined {
 }
 
 function previewLayout(editor: HTMLElement): PreviewLayout {
+  // Keep the preview in the composer’s own flow, after the draft and above the
+  // toolbar. Chat has no separate toolbar: the send button stays a sibling of
+  // the input column, and the preview follows the draft inside that column.
   if (editor.matches(chatSelector)) {
-    return {
-      container: editor.closest<HTMLElement>('[role="dialog"]') ?? document.body,
-      placement: 'above',
-    };
+    const parent = editor.parentElement;
+    if (parent) return { container: parent, before: editor.nextSibling };
+    return { container: document.body, before: null };
   }
-  return {
-    container: editor.closest<HTMLElement>('[role="dialog"]') ?? document.body,
-    heightTarget: editor.closest<HTMLElement>('[data-testid$="RichTextInputContainer"]') ?? editor,
-  };
+  const input = editor.closest<HTMLElement>('[data-testid$="RichTextInputContainer"]');
+  if (input && input !== editor) {
+    // RichTextInputContainer and DraftEditor use height:100%. Adding a sibling
+    // inside that subtree feeds the preview height back into the native editor.
+    // Insert after the complete draft branch in the nearest outer column instead.
+    const shell = shellOf(editor);
+    for (let branch: HTMLElement = input; branch.parentElement; branch = branch.parentElement) {
+      if (branch === shell) break;
+      const container = branch.parentElement;
+      const style = getComputedStyle(container);
+      if ((style.display === 'flex' || style.display === 'inline-flex') && style.flexDirection === 'column') {
+        return { container, before: branch.nextSibling };
+      }
+    }
+    // Unknown X layout: do not fall back into the height-constrained editor.
+    return { container: editor, before: null };
+  }
+  const parent = editor.parentElement;
+  if (parent) return { container: parent, before: editor.nextSibling };
+  return { container: document.body, before: null };
 }
 
 function observe(editor: HTMLElement, listener: PlatformEditorListener): () => void {

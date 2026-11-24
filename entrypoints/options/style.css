@@ -24,6 +24,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -47,6 +48,7 @@ main {
 .brand h1 { margin: 12px 0 4px; font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -0.01em; }
 .brand p, .section-description, .context p, .direction, footer { color: var(--muted); }
 .brand p { margin: 0; }
+.brand .brand-version { margin-top: 6px; font-size: 12px; }
 
 h2 { margin: 0 0 4px; font-size: 13px; line-height: 1.3; font-weight: 650; }
 .section-description { margin: 0 0 16px; }
@@ -56,6 +58,19 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .field span { font-weight: 600; }
+
+.translation-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.translation-fields .field { min-width: 0; margin-top: 0; }
+.translation-fields select { min-width: 0; }
+
+.translation-modes { display: grid; gap: 12px; margin-top: 16px; }
+.translation-mode { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.translation-mode input { margin: 4px 0 0; accent-color: var(--accent); }
+.mode-description { display: block; color: var(--muted); margin-top: 2px; }
 
 select {
   width: 100%;
@@ -176,6 +191,103 @@ footer p { margin: 0; }
 footer a { color: inherit; text-underline-offset: 3px; }
 footer a:hover { color: var(--accent); }
 .save-status[data-state="error"] { color: #f4212e; }
+
+.settings-tabs {
+  display: flex;
+  gap: 20px;
+  margin: 0 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-tabs button {
+  margin: 0 0 -1px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.settings-tabs button[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+.plus { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.plus .section-description { margin: 0; }
+.plus h3 { margin: 0; font-size: 13px; line-height: 1.3; font-weight: 650; }
+
+.plus-title-row { display: flex; align-items: center; gap: 8px; }
+.plus-title { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -0.01em; }
+.plus-title-row svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
+.plus-badge { margin-left: auto; font-size: 12px; font-weight: 650; color: var(--muted); }
+.plus-badge[data-state="active"] { color: #00ba7c; }
+.plus-badge[data-state="active"]::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+
+.plus-form, .plus-result { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.plus .field { margin-top: 0; }
+.plus input {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control);
+  color: inherit;
+  font: inherit;
+}
+.plus input.license-key-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+.plus-error { margin: 0; color: #f4212e; font-size: 13px; }
+.plus-message { margin: 0; }
+.plus-message[data-tone="error"] { color: #f4212e; }
+
+.plus-details { margin: 0; }
+.plus-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.plus-details dt { color: var(--muted); }
+.plus-details dd { margin: 0; font-weight: 600; text-align: right; }
+
+.plus-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plus button, .plus-purchase {
+  font: inherit;
+  font-weight: 650;
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.plus button.primary { border: 0; background: var(--fg); color: var(--bg); }
+.plus button.secondary, .plus-purchase {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+}
+.plus button:disabled { opacity: 0.45; cursor: default; }
+.plus button:focus-visible, .plus a:focus-visible, .plus input:focus-visible, .settings-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 @media (max-width: 560px) {
   main { padding: 32px 16px 48px; }

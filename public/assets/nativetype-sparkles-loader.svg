@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="200" height="200" fill="none" role="img" aria-labelledby="loader-title loader-desc">
+  <title id="loader-title">AI writing loader</title>
+  <desc id="loader-desc">A blue and purple magic wand surrounded by four twinkling sparkles.</desc>
+  <defs>
+    <linearGradient id="sparkleGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#60A5FA"/>
+      <stop offset="0.48" stop-color="#6875F5"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="wandTipGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B9BFF"/>
+      <stop offset="0.55" stop-color="#7565F6"/>
+      <stop offset="1" stop-color="#9B6BFA"/>
+    </linearGradient>
+    <linearGradient id="wandHandleGradient" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#20263B"/>
+      <stop offset="1" stop-color="#39415D"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .sparkle {
+      fill: url(#sparkleGradient);
+      transform-box: fill-box;
+      transform-origin: center;
+      opacity: 0.72;
+    }
+
+    #upper-left-sparkle {
+      animation: twinkle 1.55s ease-in-out -0.15s infinite;
+    }
+    #top-sparkle {
+      animation: twinkle 1.4s ease-in-out -0.55s infinite;
+    }
+    #blue-sparkle {
+      animation: twinkle 1.65s ease-in-out -0.9s infinite;
+    }
+    #lower-right-sparkle {
+      animation: twinkle 1.5s ease-in-out -1.2s infinite;
+    }
+
+    #magic-wand {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: wand-float 2.8s ease-in-out infinite;
+    }
+
+    @keyframes twinkle {
+      0%, 100% {
+        opacity: 0.38;
+        transform: scale(0.72) rotate(-7deg);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1.12) rotate(7deg);
+      }
+    }
+
+    @keyframes wand-float {
+      0%, 100% {
+        transform: translateY(1px) rotate(-1deg);
+      }
+      50% {
+        transform: translateY(-2px) rotate(1deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sparkle,
+      #magic-wand {
+        animation: none !important;
+      }
+      .sparkle {
+        opacity: 0.9;
+        transform: none;
+      }
+    }
+  </style>
+
+  <g id="upper-left-sparkle" class="sparkle">
+    <path d="M109.5 63.2C111.5 63.2 112.4 72.1 115 74.5C117.6 76.9 124.8 77.3 124.8 79C124.8 80.8 117.3 81.6 115 84C112.6 86.5 111.5 94.7 109.5 94.7C107.6 94.7 106.6 86.4 104.2 84C101.7 81.5 93.8 80.8 93.8 79C93.8 77.2 101.8 76.4 104.2 74C106.6 71.6 107.6 63.2 109.5 63.2Z"/>
+  </g>
+
+  <g id="top-sparkle" class="sparkle">
+    <path d="M154.7 50.7C156.3 50.7 156.9 57.3 158.9 59.3C160.8 61.1 166.7 61.7 166.7 63C166.7 64.4 160.9 65 158.9 67C156.9 69 156.2 74.8 154.7 74.8C153.2 74.8 152.6 68.8 150.7 66.9C148.8 65 142.9 64.4 142.9 63C142.9 61.6 148.9 60.9 150.8 59C152.7 57.1 153.3 50.7 154.7 50.7Z"/>
+  </g>
+
+  <g id="blue-sparkle" class="sparkle">
+    <path d="M191.3 74.6C192.9 74.6 193.4 81.3 195.2 83.2C197 85 202.7 85.5 202.7 86.8C202.7 88.2 197 88.8 195.2 90.5C193.4 92.4 192.9 98.7 191.3 98.7C189.8 98.7 189.2 92.4 187.4 90.5C185.6 88.7 179.6 88.2 179.6 86.8C179.6 85.4 185.6 84.9 187.4 83.1C189.2 81.3 189.9 74.6 191.3 74.6Z"/>
+  </g>
+
+  <g id="lower-right-sparkle" class="sparkle">
+    <path d="M182.2 128C184.3 128 185.2 137.1 187.7 139.6C190.2 142.1 198.5 142.9 198.5 144.7C198.5 146.5 190.1 147.5 187.6 149.9C185.2 152.4 184.3 161 182.2 161C180.4 161 179.4 152.2 177 149.8C174.6 147.4 166.1 146.5 166.1 144.7C166.1 142.9 174.6 142 177 139.6C179.5 137.1 180.3 128 182.2 128Z"/>
+  </g>
+
+  <g id="magic-wand">
+    <path d="M151.8 90.4Q154.6 87.6 157.4 90.4L167 100Q169.7 102.7 167 105.5L83.6 192.6A11.6 11.6 0 0 1 67.1 176.3Z" fill="url(#wandHandleGradient)"/>
+    <path d="M131.6 110.9L151.8 90.4Q154.6 87.6 157.4 90.4L167 100Q169.7 102.7 167 105.5L146.9 126.2Z" fill="url(#wandTipGradient)"/>
+    <path d="M135.5 114.7L150.4 99L158.7 106.8L143.1 122.7Z" fill="#E9E8FF" opacity="0.96"/>
+    <path d="M131.6 110.9L146.9 126.2L145.5 128.7L129.7 113.1Z" fill="#B9C5FF"/>
+  </g>
+</svg>

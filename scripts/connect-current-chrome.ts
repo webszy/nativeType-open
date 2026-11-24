@@ -32,6 +32,7 @@ export async function connectCurrentChrome(endpoint: string, timeout: number): P
   const socket = new WebSocket(endpoint);
   const pending = new Map<number, { resolve(value: Record<string, unknown>): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   const ignoredSessions = new Set<string>();
+  const explicitlyAttachedTargets = new Set<string>();
   // Reserve positive IDs outside Playwright's ordinary sequential request IDs.
   let nextId = 1_000_000;
   let targetId: string | undefined;
@@ -60,6 +61,9 @@ export async function connectCurrentChrome(endpoint: string, timeout: number): P
   const transport: ConnectOverCDPTransport = {
     send(message: object) {
       const outgoing = message as Message;
+      if (outgoing.method === 'Target.attachToTarget' && typeof outgoing.params?.targetId === 'string') {
+        explicitlyAttachedTargets.add(outgoing.params.targetId);
+      }
       if (!outgoing.sessionId && outgoing.method === 'Target.getTargetInfo' && !outgoing.params?.targetId) {
         // The consent-based endpoint does not always have a browser target to
         // infer here. Query our real tab explicitly for Playwright's barrier.
@@ -87,6 +91,7 @@ export async function connectCurrentChrome(endpoint: string, timeout: number): P
     if (!message.sessionId && message.method === 'Target.attachedToTarget'
       // Explicit browser sessions are needed for real extension loading.
       && message.params?.targetInfo?.type !== 'browser'
+      && !explicitlyAttachedTargets.has(message.params?.targetInfo?.targetId ?? '')
       && message.params?.targetInfo?.targetId !== targetId) {
       const sessionId = message.params?.sessionId;
       if (sessionId) {

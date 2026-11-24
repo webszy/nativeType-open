@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
 import { connectCurrentChrome } from './connect-current-chrome';
+import { captureCommercialScreenshots } from './capture-commercial-screenshots';
 
 const extensionRoot = fileURLToPath(new URL('..', import.meta.url));
 const repositoryRoot = extensionRoot;
@@ -31,6 +32,7 @@ const { values } = parseArgs({
     cdp: { type: 'string' },
     'chrome-data-dir': { type: 'string' },
     headless: { type: 'boolean', default: false },
+    commercial: { type: 'boolean', default: false },
     'login-timeout': { type: 'string', default: '600000' },
     'translation-timeout': { type: 'string', default: '600000' },
     'expected-translation': { type: 'string', default: defaultTranslation },
@@ -68,12 +70,10 @@ function profileDirectory(): string {
 
 function build(): void {
   console.log('Building NativeType for Chrome (production Manifest V3)…');
-  const pnpm = process.env.npm_execpath;
-  const result = pnpm
-    ? spawnSync(process.execPath, [pnpm, 'run', 'build'], { cwd: extensionRoot, stdio: 'inherit' })
-    : spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'build'], {
-      cwd: extensionRoot, stdio: 'inherit', shell: process.platform === 'win32',
-    });
+  // pnpm may be a native binary or a shell launcher, depending on its version.
+  const result = spawnSync('pnpm run build', {
+    cwd: extensionRoot, stdio: 'inherit', shell: true,
+  });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, 'The production build failed; no screenshots were captured.');
 }
@@ -164,7 +164,7 @@ async function waitForTranslation(preview: Locator, translationTimeout: number):
   const replace = preview.getByRole('button', { name: 'Replace', exact: true });
   const enable = preview.getByRole('button', { name: 'Enable translation', exact: true });
   const retry = preview.getByRole('button', { name: 'Retry', exact: true });
-  const status = preview.getByRole('status');
+  const status = preview.locator('[data-part="result"]');
   let enabled = false;
   let retries = 0;
   let lastStatus = '';
@@ -236,7 +236,7 @@ async function capture(page: Page, directory: string, name: string, editor: Loca
   assert.equal(await editorText(editor), expectedText);
   assert.equal(await preview.isVisible(), previewVisible, 'NativeType preview is in the wrong screenshot state.');
   if (previewVisible) {
-    assert.equal((await preview.getByRole('status').innerText()).trim(), translation);
+    assert.equal((await preview.locator('[data-part="result"]').innerText()).trim(), translation);
     assert(await preview.getByRole('button', { name: 'Replace', exact: true }).isVisible());
   }
   // Render the live X page + real extension. No mock DOM, injected styles or resized images.
@@ -262,6 +262,7 @@ Builds NativeType, opens X in a persistent browser, and captures three 1280x800 
   --cdp URL                    Attach to an explicit local CDP URL (implies --connect)
   --chrome-data-dir PATH        Locate DevToolsActivePort for a non-default Chrome data directory
   --headless                   Optional, after login; default: headed
+  --commercial                 Chinese draft, English-to-Japanese preview, AI loading
   --login-timeout MS            Default: 600000 (10 minutes)
   --translation-timeout MS      Default: 600000 (10 minutes)
   --expected-translation TEXT   Validate this exact real Chrome translation instead
@@ -283,8 +284,10 @@ No post is published and no authentication data is exported.`);
   const endpoint = attaching ? await existingChromeEndpoint() : undefined;
   const profile = attaching ? undefined : profileDirectory();
   build();
-  const manifest = JSON.parse(await readFile(path.join(extensionDirectory, 'manifest.json'), 'utf8')) as { name: string; manifest_version: number };
-  assert.equal(manifest.name, 'NativeType');
+  const manifest = JSON.parse(await readFile(path.join(extensionDirectory, 'manifest.json'), 'utf8')) as { name: string; short_name?: string; manifest_version: number };
+  assert.equal(manifest.short_name || manifest.name, 'NativeType');
+  const isNativeType = (extension: { name: string; enabled: boolean }) =>
+    (extension.name === manifest.name || extension.name === 'NativeType') && extension.enabled;
   assert.equal(manifest.manifest_version, 3);
   let context: BrowserContext;
   let attachedBrowser: Browser | undefined;
@@ -317,6 +320,7 @@ No post is published and no authentication data is exported.`);
   // user's default context, which would close their real Chrome and other tabs.
   const disconnect = () => attachedBrowser ? attachedBrowser.close() : context.close();
   let staging: string | undefined;
+  let loadedExtensionId: string | undefined;
   let editor: Locator | undefined;
   let capturePage: Page | undefined = attachedPage;
   let ownsDemo = false;
@@ -346,7 +350,7 @@ No post is published and no authentication data is exported.`);
     try {
       if (attaching) {
         const installed = (await cdp.send('Extensions.getExtensions')).extensions
-          .filter(extension => extension.name === 'NativeType' && extension.enabled);
+          .filter(isNativeType);
         assert(installed.length <= 1, 'Multiple NativeType installations are enabled. Keep one enabled before capturing.');
         if (installed[0] && path.resolve(installed[0].path) !== extensionDirectory) {
           // Reuse this project's older WXT output path, preserving its extension ID.
@@ -361,6 +365,7 @@ No post is published and no authentication data is exported.`);
         }
       }
       const extension = await cdp.send('Extensions.loadUnpacked', { path: loadDirectory });
+      loadedExtensionId = extension.id;
       console.log(`Loaded production NativeType (${extension.id}) in ${browser.version()}.`);
     } catch (error) {
       if (!attaching) {
@@ -374,9 +379,10 @@ No post is published and no authentication data is exported.`);
       } catch {
         throw new Error(`Current Chrome cannot verify/load the production extension over CDP. Load ${extensionDirectory} manually in chrome://extensions, or use the default dedicated-browser workflow.`, { cause: error });
       }
-      const installed = extensions.filter(extension => extension.name === 'NativeType' && extension.enabled);
+      const installed = extensions.filter(isNativeType);
       assert.equal(installed.length, 1, 'Keep exactly one enabled NativeType installation before capturing.');
       assert.equal(path.resolve(installed[0]!.path), loadDirectory, `Load the freshly built ${extensionDirectory} in chrome://extensions before using --connect.`);
+      loadedExtensionId = installed[0]!.id;
       console.log(`Using installed production NativeType (${installed[0]!.id}) in ${browser.version()}.`);
     } finally {
       await cdp.detach();
@@ -389,8 +395,13 @@ No post is published and no authentication data is exported.`);
     }
     page.setDefaultTimeout(15_000);
     if (!values.headless) await page.bringToFront();
+    if (values.commercial) {
+      assert(loadedExtensionId);
+      await captureCommercialScreenshots({ page, browser, extensionId: loadedExtensionId,
+        outputDirectory, viewport, openComposer: () => openComposer(page, loginTimeout, values.headless) });
+      return;
+    }
     editor = await openComposer(page, loginTimeout, values.headless);
-    await page.locator(previewSelector).waitFor({ state: 'attached' });
     const existingText = await editorText(editor);
     assert(!existingText.trim() || existingText === source || existingText === translation,
       'The X composer contains an existing draft. Save or clear it manually, then rerun; NativeType will not overwrite it.');

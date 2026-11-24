@@ -15,7 +15,7 @@ test('a first run and an upgrade with no saved settings keep Chinese to English 
   const defaults = getDefaultSettings();
   assert.deepEqual(defaults, {
     schemaVersion: 1,
-    translation: { sourceLanguage: 'zh', targetLanguage: 'en' },
+    translation: { mode: 'automatic', sourceLanguage: 'zh', targetLanguage: 'en' },
     contexts: { x: { post: true, reply: true, quote: true, chat: true } },
     analytics: { enabled: false },
   });
@@ -52,7 +52,7 @@ test('upgrading saved settings enables Chat without changing languages, consent 
   const backend = createMemoryBackend(saved);
   const store = createSettingsStore(backend);
   const upgraded = await store.load();
-  assert.deepEqual(upgraded, { ...saved, contexts: { x: { ...saved.contexts.x, chat: true } } });
+  assert.deepEqual(upgraded, { ...saved, translation: { ...saved.translation, mode: 'automatic' }, contexts: { x: { ...saved.contexts.x, chat: true } } });
   assert.deepEqual(backend.current(), saved, 'loading settings does not reset or rewrite storage');
   upgraded.contexts.x.chat = false;
   assert.equal(sameSettings(upgraded, await store.load()), false);
@@ -63,13 +63,13 @@ test('upgrading saved settings enables Chat without changing languages, consent 
 test('equal languages and corrupt storage fall back without throwing', () => {
   assert.deepEqual(normalizeSettings({
     translation: { sourceLanguage: 'en', targetLanguage: 'en' },
-  }).translation, { sourceLanguage: 'en', targetLanguage: 'zh' });
+  }).translation, { mode: 'automatic', sourceLanguage: 'en', targetLanguage: 'zh' });
   assert.deepEqual(normalizeSettings({
     translation: { sourceLanguage: 'nope', targetLanguage: 4 },
     contexts: { x: { post: 'yes', reply: false, quote: null } },
   }), {
     schemaVersion: 1,
-    translation: { sourceLanguage: 'zh', targetLanguage: 'en' },
+    translation: { mode: 'automatic', sourceLanguage: 'zh', targetLanguage: 'en' },
     contexts: { x: { post: true, reply: false, quote: true, chat: true } },
     analytics: { enabled: false },
   });
@@ -105,4 +105,28 @@ test('analytics consent requires an explicit boolean on the supported settings s
   next.analytics.enabled = false;
   await first.save(next);
   assert.deepEqual(seen, [true, false]);
+});
+
+test('Translation Mode defaults safely for legacy and invalid values and persists across readers', async () => {
+  for (const mode of [undefined, null, '', 'auto', true, 1]) {
+    assert.equal(normalizeSettings({ translation: { mode } }).translation.mode, 'automatic');
+  }
+  for (const mode of ['manual', 'automatic']) {
+    assert.equal(normalizeSettings({ translation: { mode } }).translation.mode, mode);
+  }
+  const backend = createMemoryBackend({ schemaVersion: 1, translation: { sourceLanguage: 'ja', targetLanguage: 'en' } });
+  const first = createSettingsStore(backend);
+  assert.equal((await first.load()).translation.mode, 'automatic');
+  const next = await first.load();
+  next.translation.mode = 'manual';
+  assert.equal(sameSettings(next, await first.load()), false);
+  const notifications = [];
+  const stop = first.subscribe(value => notifications.push(value.translation.mode));
+  await first.save(next);
+  assert.equal((await createSettingsStore(backend).load()).translation.mode, 'manual');
+  assert.equal((await createSettingsStore(createMemoryBackend(backend.current())).load()).translation.mode, 'manual');
+  next.translation.mode = 'automatic';
+  await first.save(next);
+  assert.deepEqual(notifications, ['manual', 'automatic']);
+  stop();
 });

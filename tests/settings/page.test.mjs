@@ -132,6 +132,35 @@ test('a failed intermediate save does not discard a queued revert', async t => {
   assert.equal(status.textContent, 'Saved');
 });
 
+test('settings open on General and Plus does not drop edits or reload the page', async t => {
+  const { backend, post } = await setup(t);
+  const nodes = [...document.body.querySelectorAll('*')];
+  const byId = id => nodes.find(element => element.id === id);
+  const general = byId('settings-general');
+  const plus = byId('settings-plus');
+  const generalTab = byId('tab-general');
+  const plusTab = byId('tab-plus');
+  assert.equal(general.hidden, false);
+  assert.equal(plus.hidden, true);
+  assert.equal(generalTab.getAttribute('aria-selected'), 'true');
+  assert.equal(plusTab.getAttribute('aria-selected'), 'false');
+  assert.equal(generalTab.textContent, 'General');
+  assert.equal(plusTab.textContent, 'Plus');
+  post.checked = false;
+  await plusTab.fire('click');
+  assert.equal(general.hidden, true);
+  assert.equal(plus.hidden, false);
+  assert.equal(plusTab.getAttribute('aria-selected'), 'true');
+  assert.equal(post.checked, false);
+  await post.fire('change');
+  assert.equal(backend.writes.length, 1);
+  assert.equal(backend.writes[0].value.contexts.x.post, false);
+  await generalTab.fire('click');
+  assert.equal(general.hidden, false);
+  assert.equal(post.checked, false);
+  assert.equal(nodes.find(element => element.tagName === 'h1').textContent, 'NativeType');
+});
+
 test('a slow initial load cannot overwrite newer edits or storage events', async t => {
   const { document } = installDOM(t);
   for (const update of ['edit', 'storage']) {
@@ -155,4 +184,40 @@ test('a slow initial load cannot overwrite newer edits or storage events', async
     await mounted;
     assert.equal(post.checked, false, update);
   }
+});
+
+test('Translation Mode starts at Automatic, saves Manual immediately and follows storage', async t => {
+  const { backend, status } = await setup(t);
+  const radios = document.body.querySelectorAll('input').filter(input => input.name === 'translation-mode');
+  const manual = radios.find(input => input.value === 'manual');
+  const automatic = radios.find(input => input.value === 'automatic');
+  assert.equal(radios.length, 2);
+  assert.equal(manual.checked, false);
+  assert.equal(automatic.checked, true);
+  assert.match(document.body.textContent, /Translate only when you ask\./);
+  assert.match(document.body.textContent, /Automatically translate as you write\./);
+  automatic.checked = false;
+  manual.checked = true;
+  await manual.fire('change');
+  assert.equal(backend.writes[0].value.translation.mode, 'manual');
+  await backend.commit(0);
+  assert.equal(status.textContent, 'Saved');
+  backend.publish(getDefaultSettings());
+  assert.equal(manual.checked, false);
+  assert.equal(automatic.checked, true);
+});
+
+test('rapid mode changes preserve the latest choice while saving', async t => {
+  const { backend } = await setup(t);
+  const radios = document.body.querySelectorAll('input').filter(input => input.name === 'translation-mode');
+  const choose = async mode => {
+    for (const input of radios) input.checked = input.value === mode;
+    await radios.find(input => input.checked).fire('change');
+  };
+  await choose('manual');
+  await choose('automatic');
+  await backend.commit(0);
+  assert.equal(backend.writes[1].value.translation.mode, 'automatic');
+  await backend.commit(1);
+  assert.equal(radios.find(input => input.checked).value, 'automatic');
 });

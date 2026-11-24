@@ -1,8 +1,10 @@
 import { browser } from 'wxt/browser';
 import { createAnalyticsClient } from '../analytics/client';
+import { createPolishClient } from '../ai/client';
 import { startNativeType } from '../core/controller';
 import { defaultLanguagePair } from '../languages/config';
 import { createTriggerDetector } from '../languages/detector';
+import { createChromeEntitlementBadgeSource } from '../license/chrome-entitlement';
 import { resolvePlatform } from '../platforms/registry';
 import { createChromeSettingsStore } from '../settings/chrome';
 import { OPEN_SETTINGS_MESSAGE } from '../settings/messages';
@@ -21,6 +23,10 @@ export default defineContentScript({
       settings: createChromeSettingsStore(),
       detector: createTriggerDetector(),
       analytics: createAnalyticsClient(message => browser.runtime.sendMessage(message)),
+      polish: createPolishClient(message => browser.runtime.sendMessage(message)),
+      logoUrl: browser.runtime.getURL('/icon/128.png'),
+      sparklesLoaderUrl: browser.runtime.getURL('/assets/nativetype-sparkles-loader.svg'),
+      entitlement: createChromeEntitlementBadgeSource(),
       host: {
         listen: (target, type, listener) => ctx.addEventListener(target, type, listener),
         onInvalidated: listener => ctx.onInvalidated(listener),

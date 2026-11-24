@@ -37,6 +37,9 @@ test('the entry only starts and stops the approved registries', async () => {
   assert.match(source, /defaultLanguagePair/);
   assert.match(source, /startNativeType\(/);
   assert.match(source, /matches: \['https:\/\/x\.com\/\*'\]/);
+  assert.match(source, /createChromeEntitlementBadgeSource\(\)/);
+  assert.match(source, /runtime\.getURL\('\/icon\/128\.png'\)/);
+  assert.doesNotMatch(source, /licenseKey|LICENSE_STORAGE_KEY/);
   assert.doesNotMatch(source, /setTimeout|compositionstart|MutationObserver|translate\(/);
 });
 
@@ -60,7 +63,8 @@ test('manifest inputs keep X and scope analytics access to the validated endpoin
   const background = await readFile(path.join(root, 'entrypoints/background.ts'), 'utf8');
   assert.doesNotMatch(config, /\bversion\s*:/); // WXT inherits package.json.
   assert.match(config, /permissions:\s*\['storage'\]/);
-  assert.match(config, /host_permissions: endpoint \?/);
+  assert.match(config, /host_permissions:/);
+  assert.match(config, /polishEndpoint/);
   assert.match(config, /analyticsEndpoint/);
   assert.doesNotMatch(config, /<all_urls>|https:\/\/\*\/\*/);
   assert.match(options, /manifest\.open_in_tab/);

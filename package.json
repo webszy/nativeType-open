@@ -1,8 +1,8 @@
 {
   "name": "nativetype-open",
-  "description": "Write in your language. Publish in another.",
+  "description": "Write on X in your native language and publish in another. Free local on-device translation with optional AI writing polish.",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.1.1",
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -12,6 +12,7 @@
     "dev": "wxt",
     "build": "wxt build",
     "test": "node --test tests/translator.test.mjs",
+    "test:browser": "node tests/run-browser.mjs",
     "screenshot:store": "node --import tsx scripts/capture-store-screenshots.ts",
     "zip": "wxt zip",
     "compile": "tsc --noEmit",

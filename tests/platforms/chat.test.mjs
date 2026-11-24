@@ -74,10 +74,10 @@ test('Chat identity changes when its route or composer ownership changes, even w
   assert.notEqual(xPlatform.draftKey(editor), first);
 });
 
-test('Chat uses a preview above its draft without expanding the composer or message history', t => {
+test('Chat mounts the inline preview after the draft and inside the input column', t => {
   const { document } = installDOM(t);
-  const { editor } = chatComposer(document);
-  assert.deepEqual(xPlatform.previewLayout(editor), { container: document.body, placement: 'above' });
+  const { editor, inputContainer } = chatComposer(document);
+  assert.deepEqual(xPlatform.previewLayout(editor), { container: inputContainer, before: null });
 });
 
 test('Chat replacement synchronizes a simulated React value tracker, leaves a caret and emits no send event', async t => {

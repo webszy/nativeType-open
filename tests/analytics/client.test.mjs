@@ -26,5 +26,18 @@ test('background message validation rejects unknown events and extra content', (
     { type: ANALYTICS_EVENT_MESSAGE, event: 'translation_success', text: 'private draft' }]) {
     assert.equal(eventFromMessage(value), undefined);
   }
-  assert.equal(eventFromMessage({ type: ANALYTICS_EVENT_MESSAGE, event: 'translation_success' }), 'translation_success');
+  assert.deepEqual(eventFromMessage({ type: ANALYTICS_EVENT_MESSAGE, event: 'translation_success' }), { event: 'translation_success' });
+});
+
+test('modern context crosses messaging intact and rejects content or incomplete new events', () => {
+  const context = { eventId: crypto.randomUUID(), sessionId: crypto.randomUUID(), previewId: crypto.randomUUID(), source: 'ai' };
+  const messages = [];
+  const report = createAnalyticsClient(async message => { messages.push(message); });
+  report('replace_success', context);
+  report('replace_success', context); // Transport retry keeps the original event ID.
+  assert.equal(messages[0].eventId, messages[1].eventId);
+  assert.deepEqual(eventFromMessage(messages[0]), { event: 'replace_success', ...context });
+  report('preview_shown', { ...context, text: 'private draft' });
+  report('preview_shown', {});
+  assert.equal(messages.length, 2);
 });
